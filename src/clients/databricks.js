@@ -424,6 +424,85 @@ async function invokeAzureOpenAI(body) {
   }
 }
 
+async function invokeOpenAI(body) {
+  if (!config.openai?.apiKey) {
+    throw new Error("OpenAI API key is not configured.");
+  }
+
+  const {
+    convertAnthropicToolsToOpenRouter,
+    convertAnthropicMessagesToOpenRouter
+  } = require("./openrouter-utils");
+
+  const endpoint = config.openai.endpoint || "https://api.openai.com/v1/chat/completions";
+  const headers = {
+    "Authorization": `Bearer ${config.openai.apiKey}`,
+    "Content-Type": "application/json",
+  };
+
+  // Add organization header if configured
+  if (config.openai.organization) {
+    headers["OpenAI-Organization"] = config.openai.organization;
+  }
+
+  // Convert messages and handle system message
+  const messages = convertAnthropicMessagesToOpenRouter(body.messages || []);
+
+  // Anthropic uses separate 'system' field, OpenAI needs it as first message
+  if (body.system) {
+    messages.unshift({
+      role: "system",
+      content: body.system
+    });
+  }
+
+  const openAIBody = {
+    model: config.openai.model || "gpt-4o",
+    messages,
+    temperature: body.temperature ?? 0.7,
+    max_tokens: body.max_tokens ?? 4096,
+    top_p: body.top_p ?? 1.0,
+    stream: body.stream ?? false
+  };
+
+  // Add tools - inject standard tools if client didn't send any (passthrough mode)
+  let toolsToSend = body.tools;
+  let toolsInjected = false;
+
+  if (!Array.isArray(toolsToSend) || toolsToSend.length === 0) {
+    // Client didn't send tools (likely passthrough mode) - inject standard Claude Code tools
+    toolsToSend = STANDARD_TOOLS;
+    toolsInjected = true;
+    logger.info({
+      injectedToolCount: STANDARD_TOOLS.length,
+      injectedToolNames: STANDARD_TOOLS.map(t => t.name),
+      reason: "Client did not send tools (passthrough mode)"
+    }, "=== INJECTING STANDARD TOOLS (OpenAI) ===");
+  }
+
+  if (Array.isArray(toolsToSend) && toolsToSend.length > 0) {
+    openAIBody.tools = convertAnthropicToolsToOpenRouter(toolsToSend);
+    openAIBody.parallel_tool_calls = true;  // Enable parallel tool calling
+    openAIBody.tool_choice = "auto";  // Let the model decide when to use tools
+    logger.info({
+      toolCount: toolsToSend.length,
+      toolNames: toolsToSend.map(t => t.name),
+      toolsInjected
+    }, "=== SENDING TOOLS TO OPENAI ===");
+  }
+
+  logger.info({
+    endpoint,
+    model: openAIBody.model,
+    hasTools: !!openAIBody.tools,
+    toolCount: openAIBody.tools?.length || 0,
+    temperature: openAIBody.temperature,
+    max_tokens: openAIBody.max_tokens,
+  }, "=== OPENAI REQUEST ===");
+
+  return performJsonRequest(endpoint, { headers, body: openAIBody }, "OpenAI");
+}
+
 async function invokeModel(body, options = {}) {
   const { determineProvider, isFallbackEnabled, getFallbackProvider } = require("./routing");
   const metricsCollector = getMetricsCollector();
@@ -463,6 +542,8 @@ async function invokeModel(body, options = {}) {
         return await invokeOllama(body);
       } else if (initialProvider === "openrouter") {
         return await invokeOpenRouter(body);
+      } else if (initialProvider === "openai") {
+        return await invokeOpenAI(body);
       }
       return await invokeDatabricks(body);
     });
@@ -538,6 +619,8 @@ async function invokeModel(body, options = {}) {
           return await invokeAzureAnthropic(body);
         } else if (fallbackProvider === "openrouter") {
           return await invokeOpenRouter(body);
+        } else if (fallbackProvider === "openai") {
+          return await invokeOpenAI(body);
         }
         return await invokeDatabricks(body);
       });

@@ -5,6 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/vishalveerareddy123/Lynkr)
 [![Databricks Supported](https://img.shields.io/badge/Databricks-Supported-orange)](https://www.databricks.com/)
+[![OpenAI Compatible](https://img.shields.io/badge/OpenAI-Compatible-412991)](https://openai.com/)
 [![Ollama Compatible](https://img.shields.io/badge/Ollama-Compatible-brightgreen)](https://ollama.ai/)
 [![IndexNow Enabled](https://img.shields.io/badge/IndexNow-Enabled-success?style=flat-square)](https://www.indexnow.org/)
 [![DevHunt](https://img.shields.io/badge/DevHunt-Lynkr-orange)](https://devhunt.org/tool/lynkr)
@@ -66,7 +67,7 @@ Key highlights:
 
 The result is a production-ready, self-hosted alternative that stays close to Anthropic's ergonomics while providing enterprise-grade reliability, observability, and performance.
 
-> **Compatibility note:** Claude models hosted on Databricks work out of the box. Set `MODEL_PROVIDER=azure-anthropic` (and related credentials) to target the Azure-hosted Anthropic `/anthropic/v1/messages` endpoint. Set `MODEL_PROVIDER=openrouter` to access 100+ models through OpenRouter (GPT-4o, Claude, Gemini, etc.). Set `MODEL_PROVIDER=ollama` to use locally-running Ollama models (qwen2.5-coder, llama3, mistral, etc.).
+> **Compatibility note:** Claude models hosted on Databricks work out of the box. Set `MODEL_PROVIDER=openai` to use OpenAI's API directly (GPT-4o, GPT-4o-mini, o1, etc.). Set `MODEL_PROVIDER=azure-anthropic` (and related credentials) to target the Azure-hosted Anthropic `/anthropic/v1/messages` endpoint. Set `MODEL_PROVIDER=openrouter` to access 100+ models through OpenRouter (GPT-4o, Claude, Gemini, etc.). Set `MODEL_PROVIDER=ollama` to use locally-running Ollama models (qwen2.5-coder, llama3, mistral, etc.).
 
 Further documentation and usage notes are available on [DeepWiki](https://deepwiki.com/vishalveerareddy123/Lynkr).
 
@@ -81,7 +82,8 @@ Lynkr supports multiple AI model providers, giving you flexibility in choosing t
 | Provider | Configuration | Models Available | Best For |
 |----------|--------------|------------------|----------|
 | **Databricks** (Default) | `MODEL_PROVIDER=databricks` | Claude Sonnet 4.5, Claude Opus 4.5 | Production use, enterprise deployment |
-| **Azure OpenAI** | `MODEL_PROVIDER=azure-openai` | GPT-4o, GPT-4o-mini, GPT-5, o1, o3 | Azure integration, Microsoft ecosystem |
+| **OpenAI** | `MODEL_PROVIDER=openai` | GPT-5, GPT-5.2, GPT-4o, GPT-4o-mini, GPT-4-turbo, o1, o1-mini | Direct OpenAI API access |
+| **Azure OpenAI** | `MODEL_PROVIDER=azure-openai` | GPT-5, GPT-5.2,GPT-4o, GPT-4o-mini, GPT-5, o1, o3 | Azure integration, Microsoft ecosystem |
 | **Azure Anthropic** | `MODEL_PROVIDER=azure-anthropic` | Claude Sonnet 4.5, Claude Opus 4.5 | Azure-hosted Claude models |
 | **OpenRouter** | `MODEL_PROVIDER=openrouter` | 100+ models (GPT-4o, Claude, Gemini, Llama, etc.) | Model flexibility, cost optimization |
 | **Ollama** (Local) | `MODEL_PROVIDER=ollama` | Llama 3.1, Qwen2.5, Mistral, CodeLlama | Local/offline use, privacy, no API costs |
@@ -158,16 +160,16 @@ FALLBACK_PROVIDER=databricks  # or azure-openai, openrouter, azure-anthropic
 
 ### **Provider Comparison**
 
-| Feature | Databricks | Azure OpenAI | Azure Anthropic | OpenRouter | Ollama |
-|---------|-----------|--------------|-----------------|------------|--------|
-| **Setup Complexity** | Medium | Medium | Medium | Easy | Easy |
-| **Cost** | $$$ | $$ | $$$ | $ | Free |
-| **Latency** | Low | Low | Low | Medium | Very Low |
-| **Tool Calling** | Excellent | Excellent | Excellent | Good | Fair |
-| **Context Length** | 200K | 128K | 200K | Varies | 32K-128K |
-| **Streaming** | Yes | Yes | Yes | Yes | Yes |
-| **Privacy** | Enterprise | Enterprise | Enterprise | Third-party | Local |
-| **Offline** | No | No | No | No | Yes |
+| Feature | Databricks | OpenAI | Azure OpenAI | Azure Anthropic | OpenRouter | Ollama |
+|---------|-----------|--------|--------------|-----------------|------------|--------|
+| **Setup Complexity** | Medium | Easy | Medium | Medium | Easy | Easy |
+| **Cost** | $$$ | $$ | $$ | $$$ | $ | Free |
+| **Latency** | Low | Low | Low | Low | Medium | Very Low |
+| **Tool Calling** | Excellent | Excellent | Excellent | Excellent | Good | Fair |
+| **Context Length** | 200K | 128K | 128K | 200K | Varies | 32K-128K |
+| **Streaming** | Yes | Yes | Yes | Yes | Yes | Yes |
+| **Privacy** | Enterprise | Third-party | Enterprise | Enterprise | Third-party | Local |
+| **Offline** | No | No | No | No | No | Yes |
 
 ---
 
@@ -624,6 +626,33 @@ WORKSPACE_ROOT=/path/to/your/repo
 
 See https://openrouter.ai/models for the complete list with pricing.
 
+**OpenAI configuration:**
+
+OpenAI provides direct access to GPT-4o, GPT-4o-mini, o1, and other models through their official API. This is the simplest way to use OpenAI models without going through Azure or OpenRouter.
+
+```env
+MODEL_PROVIDER=openai
+OPENAI_API_KEY=sk-your-openai-api-key                    # Get from https://platform.openai.com/api-keys
+OPENAI_MODEL=gpt-4o                                      # Model to use (default: gpt-4o)
+PORT=8080
+WORKSPACE_ROOT=/path/to/your/repo
+```
+
+
+**Getting an OpenAI API key:**
+1. Visit https://platform.openai.com
+2. Sign up or log in to your account
+3. Go to https://platform.openai.com/api-keys
+4. Create a new API key
+5. Add credits to your account (pay-as-you-go)
+
+**OpenAI benefits:**
+- ✅ **Direct API access** – No intermediaries, lowest latency to OpenAI
+- ✅ **Full tool calling support** – Excellent function calling compatible with Claude Code CLI
+- ✅ **Parallel tool calls** – Execute multiple tools simultaneously for faster workflows
+- ✅ **Organization support** – Use organization-level API keys for team billing
+- ✅ **Simple setup** – Just one API key needed
+
 **Getting an OpenRouter API key:**
 1. Visit https://openrouter.ai
 2. Sign in with GitHub, Google, or email
@@ -647,7 +676,7 @@ See https://openrouter.ai/models for the complete list with pricing.
 |----------|-------------|---------|
 | `PORT` | HTTP port for the proxy server. | `8080` |
 | `WORKSPACE_ROOT` | Filesystem path exposed to workspace tools and indexer. | `process.cwd()` |
-| `MODEL_PROVIDER` | Selects the model backend (`databricks`, `azure-anthropic`, `openrouter`, `ollama`). | `databricks` |
+| `MODEL_PROVIDER` | Selects the model backend (`databricks`, `openai`, `azure-openai`, `azure-anthropic`, `openrouter`, `ollama`). | `databricks` |
 | `MODEL_DEFAULT` | Overrides the default model/deployment name sent to the provider. | Provider-specific default |
 | `DATABRICKS_API_BASE` | Base URL of your Databricks workspace (required when `MODEL_PROVIDER=databricks`). | – |
 | `DATABRICKS_API_KEY` | Databricks PAT used for the serving endpoint (required for Databricks). | – |
@@ -659,6 +688,10 @@ See https://openrouter.ai/models for the complete list with pricing.
 | `OPENROUTER_MODEL` | OpenRouter model to use (e.g., `openai/gpt-4o-mini`, `anthropic/claude-3.5-sonnet`). See https://openrouter.ai/models | `openai/gpt-4o-mini` |
 | `OPENROUTER_ENDPOINT` | OpenRouter API endpoint URL. | `https://openrouter.ai/api/v1/chat/completions` |
 | `OPENROUTER_MAX_TOOLS_FOR_ROUTING` | Maximum tool count for routing to OpenRouter in hybrid mode. | `15` |
+| `OPENAI_API_KEY` | OpenAI API key (required when `MODEL_PROVIDER=openai`). Get from https://platform.openai.com/api-keys | – |
+| `OPENAI_MODEL` | OpenAI model to use (e.g., `gpt-4o`, `gpt-4o-mini`, `o1-preview`). | `gpt-4o` |
+| `OPENAI_ENDPOINT` | OpenAI API endpoint URL (usually don't need to change). | `https://api.openai.com/v1/chat/completions` |
+| `OPENAI_ORGANIZATION` | OpenAI organization ID for organization-level API keys (optional). | – |
 | `OLLAMA_ENDPOINT` | Ollama API endpoint URL (required when `MODEL_PROVIDER=ollama`). | `http://localhost:11434` |
 | `OLLAMA_MODEL` | Ollama model name to use (e.g., `qwen2.5-coder:latest`, `llama3`, `mistral`). | `qwen2.5-coder:7b` |
 | `OLLAMA_TIMEOUT_MS` | Request timeout for Ollama API calls in milliseconds. | `120000` (2 minutes) |
@@ -1282,6 +1315,8 @@ Replace `<workspace>` and `<endpoint-name>` with your Databricks workspace host 
 ### Provider-specific behaviour
 
 - **Databricks** – Mirrors Anthropic's hosted behaviour. Automatic policy web fallbacks (`needsWebFallback`) can trigger an extra `web_fetch`, and the upstream service executes dynamic pages on your behalf.
+- **OpenAI** – Connects directly to OpenAI's API for GPT-4o, GPT-4o-mini, o1, and other models. Full tool calling support with parallel tool execution enabled by default. Messages and tools are automatically converted between Anthropic and OpenAI formats. Supports organization-level API keys. Best used when you want direct access to OpenAI's latest models with the simplest setup.
+- **Azure OpenAI** – Connects to Azure-hosted OpenAI models. Similar to direct OpenAI but through Azure's infrastructure for enterprise compliance, data residency, and Azure billing integration.
 - **Azure Anthropic** – Requests are normalised to Azure's payload shape. The proxy disables automatic `web_fetch` fallbacks to avoid duplicate tool executions; instead, the assistant surfaces a diagnostic message and you can trigger the tool manually if required.
 - **OpenRouter** – Connects to OpenRouter's unified API for access to 100+ models. Full tool calling support with automatic format conversion between Anthropic and OpenAI formats. Messages are converted to OpenAI's format, tool calls are properly translated, and responses are converted back to Anthropic-compatible format. Best used for cost optimization, model flexibility, or when you want to experiment with different models without changing your codebase.
 - **Ollama** – Connects to locally-running Ollama models. Tool support varies by model (llama3.1, qwen2.5, mistral support tools; llama3 and older models don't). System prompts are merged into the first user message. Response format is converted from Ollama's format to Anthropic-compatible content blocks. Best used for simple text generation tasks, offline development, or as a cost-effective development environment.
@@ -1492,7 +1527,31 @@ A: Popular choices:
 
 See https://openrouter.ai/models for the complete list with pricing and features.
 
-**Q: Can I use OpenRouter with the 3-tier hybrid routing?**
+**Q: How do I use OpenAI directly with Lynkr?**
+A: Set `MODEL_PROVIDER=openai` and configure your API key:
+```env
+MODEL_PROVIDER=openai
+OPENAI_API_KEY=sk-your-api-key
+OPENAI_MODEL=gpt-4o  # or gpt-4o-mini, o1-preview, etc.
+```
+Then start Lynkr and connect Claude CLI as usual. All requests will be routed to OpenAI's API with automatic format conversion.
+
+**Q: What's the difference between OpenAI, Azure OpenAI, and OpenRouter?**
+A:
+- **OpenAI** – Direct access to OpenAI's API. Simplest setup, lowest latency to OpenAI, pay-as-you-go billing directly with OpenAI.
+- **Azure OpenAI** – OpenAI models hosted on Azure infrastructure. Enterprise features (private endpoints, data residency, Azure AD integration), billed through Azure.
+- **OpenRouter** – Third-party API gateway providing access to 100+ models (including OpenAI). Competitive pricing, automatic fallbacks, single API key for multiple providers.
+
+Choose OpenAI for simplicity and direct access, Azure OpenAI for enterprise requirements, or OpenRouter for model flexibility and cost optimization.
+
+**Q: Which OpenAI model should I use?**
+A:
+- **Best quality**: `gpt-4o` – Most capable, multimodal (text + vision), excellent tool calling
+- **Best value**: `gpt-4o-mini` – Fast, affordable ($0.15/$0.60 per 1M tokens), good for most tasks
+- **Complex reasoning**: `o1-preview` – Advanced reasoning for math, logic, and complex problems
+- **Fast reasoning**: `o1-mini` – Efficient reasoning for coding and math tasks
+
+**Q: Can I use OpenAI with the 3-tier hybrid routing?**
 A: Yes! The recommended configuration uses:
 - **Tier 1 (0-2 tools)**: Ollama (free, local, fast)
 - **Tier 2 (3-14 tools)**: OpenRouter (affordable, full tool support)

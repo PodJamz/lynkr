@@ -62,7 +62,7 @@ function resolveConfigPath(targetPath) {
   return path.resolve(normalised);
 }
 
-const SUPPORTED_MODEL_PROVIDERS = new Set(["databricks", "azure-anthropic", "ollama", "openrouter", "azure-openai"]);
+const SUPPORTED_MODEL_PROVIDERS = new Set(["databricks", "azure-anthropic", "ollama", "openrouter", "azure-openai", "openai"]);
 const rawModelProvider = (process.env.MODEL_PROVIDER ?? "databricks").toLowerCase();
 const modelProvider = SUPPORTED_MODEL_PROVIDERS.has(rawModelProvider)
   ? rawModelProvider
@@ -90,6 +90,11 @@ const azureOpenAIApiKey = process.env.AZURE_OPENAI_API_KEY?.trim() || null;
 const azureOpenAIDeployment = process.env.AZURE_OPENAI_DEPLOYMENT?.trim() || "gpt-4o";
 const azureOpenAIApiVersion = process.env.AZURE_OPENAI_API_VERSION?.trim() || "2024-08-01-preview";
 
+// OpenAI configuration
+const openAIApiKey = process.env.OPENAI_API_KEY?.trim() || null;
+const openAIModel = process.env.OPENAI_MODEL?.trim() || "gpt-4o";
+const openAIEndpoint = process.env.OPENAI_ENDPOINT?.trim() || "https://api.openai.com/v1/chat/completions";
+const openAIOrganization = process.env.OPENAI_ORGANIZATION?.trim() || null;
 
 // Hybrid routing configuration
 const preferOllama = process.env.PREFER_OLLAMA === "true";
@@ -131,6 +136,12 @@ if (modelProvider === "azure-anthropic" && (!azureAnthropicEndpoint || !azureAnt
 if (modelProvider === "azure-openai" && (!azureOpenAIEndpoint || !azureOpenAIApiKey)) {
   throw new Error(
     "Set AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY before starting the proxy.",
+  );
+}
+
+if (modelProvider === "openai" && !openAIApiKey) {
+  throw new Error(
+    "Set OPENAI_API_KEY before starting the proxy.",
   );
 }
 
@@ -352,6 +363,12 @@ const config = {
     apiKey: azureOpenAIApiKey,
     deployment: azureOpenAIDeployment,
     apiVersion: azureOpenAIApiVersion
+  },
+  openai: {
+    apiKey: openAIApiKey,
+    model: openAIModel,
+    endpoint: openAIEndpoint,
+    organization: openAIOrganization,
   },
   modelProvider: {
     type: modelProvider,
