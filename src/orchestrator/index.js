@@ -1123,6 +1123,52 @@ async function runAgentLoop({
       );
     }
 
+    // === MEMORY RETRIEVAL (Titans-inspired long-term memory) ===
+    if (config.memory?.enabled !== false && steps === 1) {
+      try {
+        const memoryRetriever = require('../memory/retriever');
+
+        // Get last user message for query
+        const lastUserMessage = cleanPayload.messages
+          ?.filter(m => m.role === 'user')
+          ?.pop();
+
+        if (lastUserMessage) {
+          const query = memoryRetriever.extractQueryFromMessage(lastUserMessage);
+
+          if (query) {
+            const relevantMemories = memoryRetriever.retrieveRelevantMemories(query, {
+              limit: config.memory.retrievalLimit ?? 5,
+              sessionId: session?.id,
+              includeGlobal: config.memory.includeGlobalMemories !== false,
+            });
+
+            if (relevantMemories.length > 0) {
+              logger.debug({
+                sessionId: session?.id ?? null,
+                memoriesRetrieved: relevantMemories.length,
+              }, 'Injecting long-term memories into context');
+
+              // Inject memories into system prompt
+              const injectedSystem = memoryRetriever.injectMemoriesIntoSystem(
+                cleanPayload.system,
+                relevantMemories,
+                config.memory.injectionFormat ?? 'system'
+              );
+
+              if (typeof injectedSystem === 'string') {
+                cleanPayload.system = injectedSystem;
+              } else if (injectedSystem.system) {
+                cleanPayload.system = injectedSystem.system;
+              }
+            }
+          }
+        }
+      } catch (err) {
+        logger.warn({ err, sessionId: session?.id }, 'Memory retrieval failed, continuing without memories');
+      }
+    }
+
     const databricksResponse = await invokeModel(cleanPayload);
 
     // Handle streaming responses (pass through without buffering)
@@ -1921,6 +1967,56 @@ async function runAgentLoop({
       }, "=== CONVERTED ANTHROPIC RESPONSE (OpenAI) ===");
 
       anthropicPayload.content = policy.sanitiseContent(anthropicPayload.content);
+    } else if (actualProvider === "llamacpp") {
+      const { convertOpenRouterResponseToAnthropic } = require("../clients/openrouter-utils");
+
+      // Validate llama.cpp response has choices array before conversion
+      if (!databricksResponse.json?.choices?.length) {
+        logger.warn({
+          json: databricksResponse.json,
+          status: databricksResponse.status
+        }, "llama.cpp response missing choices array");
+
+        appendTurnToSession(session, {
+          role: "assistant",
+          type: "error",
+          status: databricksResponse.status,
+          content: databricksResponse.json,
+          metadata: { termination: "malformed_response" },
+        });
+
+        const response = buildErrorResponse(databricksResponse);
+        return {
+          response,
+          steps,
+          durationMs: Date.now() - start,
+          terminationReason: response.terminationReason,
+        };
+      }
+
+      // Log llama.cpp raw response
+      logger.info({
+        hasChoices: !!databricksResponse.json?.choices,
+        choiceCount: databricksResponse.json?.choices?.length || 0,
+        hasToolCalls: !!databricksResponse.json?.choices?.[0]?.message?.tool_calls,
+        toolCallCount: databricksResponse.json?.choices?.[0]?.message?.tool_calls?.length || 0,
+        finishReason: databricksResponse.json?.choices?.[0]?.finish_reason
+      }, "=== LLAMA.CPP RAW RESPONSE ===");
+
+      // Convert llama.cpp format to Anthropic format (reuse OpenRouter utility)
+      anthropicPayload = convertOpenRouterResponseToAnthropic(
+        databricksResponse.json,
+        requestedModel,
+      );
+
+      logger.info({
+        contentBlocks: anthropicPayload.content?.length || 0,
+        contentTypes: anthropicPayload.content?.map(c => c.type) || [],
+        stopReason: anthropicPayload.stop_reason,
+        hasToolUse: anthropicPayload.content?.some(c => c.type === 'tool_use')
+      }, "=== CONVERTED ANTHROPIC RESPONSE (llama.cpp) ===");
+
+      anthropicPayload.content = policy.sanitiseContent(anthropicPayload.content);
     } else {
       anthropicPayload = toAnthropicResponse(
         databricksResponse.json,
@@ -2188,6 +2284,30 @@ async function runAgentLoop({
         const promptTokens = databricksResponse.json?.usage?.prompt_tokens ?? 0;
         anthropicPayload.usage.cache_creation_input_tokens = promptTokens;
       }
+    }
+
+    // === MEMORY EXTRACTION (Titans-inspired long-term memory) ===
+    if (config.memory?.enabled !== false && config.memory?.extraction?.enabled !== false) {
+      setImmediate(async () => {
+        try {
+          const memoryExtractor = require('../memory/extractor');
+
+          const extractedMemories = await memoryExtractor.extractMemories(
+            anthropicPayload,
+            cleanPayload.messages,
+            { sessionId: session?.id }
+          );
+
+          if (extractedMemories.length > 0) {
+            logger.debug({
+              sessionId: session?.id,
+              memoriesExtracted: extractedMemories.length,
+            }, 'Extracted and stored long-term memories');
+          }
+        } catch (err) {
+          logger.warn({ err, sessionId: session?.id }, 'Memory extraction failed');
+        }
+      });
     }
 
     logger.info(

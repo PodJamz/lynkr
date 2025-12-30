@@ -1,0 +1,686 @@
+const assert = require("assert");
+const { describe, it, beforeEach, afterEach } = require("node:test");
+
+describe("llama.cpp Integration", () => {
+  let originalEnv;
+
+  beforeEach(() => {
+    originalEnv = { ...process.env };
+
+    // Clear module cache
+    delete require.cache[require.resolve("../src/config")];
+    delete require.cache[require.resolve("../src/clients/routing")];
+    delete require.cache[require.resolve("../src/clients/openrouter-utils")];
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  describe("Configuration", () => {
+    it("should accept llamacpp as a valid MODEL_PROVIDER", () => {
+      process.env.MODEL_PROVIDER = "llamacpp";
+      process.env.LLAMACPP_ENDPOINT = "http://localhost:8080";
+
+      const config = require("../src/config");
+      assert.strictEqual(config.modelProvider.type, "llamacpp");
+    });
+
+    it("should use default endpoint when LLAMACPP_ENDPOINT is not set", () => {
+      process.env.MODEL_PROVIDER = "llamacpp";
+      delete process.env.LLAMACPP_ENDPOINT;
+
+      const config = require("../src/config");
+      assert.strictEqual(config.llamacpp.endpoint, "http://localhost:8080");
+    });
+
+    it("should use custom endpoint when LLAMACPP_ENDPOINT is set", () => {
+      process.env.MODEL_PROVIDER = "llamacpp";
+      process.env.LLAMACPP_ENDPOINT = "http://192.168.1.100:9000";
+
+      const config = require("../src/config");
+      assert.strictEqual(config.llamacpp.endpoint, "http://192.168.1.100:9000");
+    });
+
+    it("should throw error when LLAMACPP_ENDPOINT is invalid URL", () => {
+      process.env.MODEL_PROVIDER = "llamacpp";
+      process.env.LLAMACPP_ENDPOINT = "not-a-valid-url";
+
+      assert.throws(
+        () => require("../src/config"),
+        /LLAMACPP_ENDPOINT must be a valid URL/
+      );
+    });
+
+    it("should use default model when LLAMACPP_MODEL is not set", () => {
+      process.env.MODEL_PROVIDER = "llamacpp";
+      delete process.env.LLAMACPP_MODEL;
+
+      const config = require("../src/config");
+      assert.strictEqual(config.llamacpp.model, "default");
+    });
+
+    it("should use custom model when LLAMACPP_MODEL is set", () => {
+      process.env.MODEL_PROVIDER = "llamacpp";
+      process.env.LLAMACPP_MODEL = "qwen2.5-coder-7b";
+
+      const config = require("../src/config");
+      assert.strictEqual(config.llamacpp.model, "qwen2.5-coder-7b");
+    });
+
+    it("should use default timeout when LLAMACPP_TIMEOUT_MS is not set", () => {
+      process.env.MODEL_PROVIDER = "llamacpp";
+      delete process.env.LLAMACPP_TIMEOUT_MS;
+
+      const config = require("../src/config");
+      assert.strictEqual(config.llamacpp.timeout, 120000);
+    });
+
+    it("should use custom timeout when LLAMACPP_TIMEOUT_MS is set", () => {
+      process.env.MODEL_PROVIDER = "llamacpp";
+      process.env.LLAMACPP_TIMEOUT_MS = "300000";
+
+      const config = require("../src/config");
+      assert.strictEqual(config.llamacpp.timeout, 300000);
+    });
+
+    it("should have null apiKey when LLAMACPP_API_KEY is not set", () => {
+      process.env.MODEL_PROVIDER = "llamacpp";
+      delete process.env.LLAMACPP_API_KEY;
+
+      const config = require("../src/config");
+      assert.strictEqual(config.llamacpp.apiKey, null);
+    });
+
+    it("should store apiKey when LLAMACPP_API_KEY is set", () => {
+      process.env.MODEL_PROVIDER = "llamacpp";
+      process.env.LLAMACPP_API_KEY = "my-secret-key";
+
+      const config = require("../src/config");
+      assert.strictEqual(config.llamacpp.apiKey, "my-secret-key");
+    });
+  });
+
+  describe("Routing", () => {
+    it("should route to llamacpp when MODEL_PROVIDER is llamacpp", () => {
+      process.env.MODEL_PROVIDER = "llamacpp";
+      process.env.LLAMACPP_ENDPOINT = "http://localhost:8080";
+      process.env.PREFER_OLLAMA = "false";
+
+      const config = require("../src/config");
+      const routing = require("../src/clients/routing");
+
+      const payload = { messages: [{ role: "user", content: "test" }] };
+      const provider = routing.determineProvider(payload);
+
+      assert.strictEqual(provider, "llamacpp");
+    });
+
+    it("should route to llamacpp as fallback for heavy tool count", () => {
+      // Clear other API keys to ensure llama.cpp fallback is used
+      delete process.env.OPENROUTER_API_KEY;
+      delete process.env.OPENAI_API_KEY;
+      delete process.env.AZURE_OPENAI_API_KEY;
+
+      process.env.MODEL_PROVIDER = "ollama";
+      process.env.PREFER_OLLAMA = "true";
+      process.env.OLLAMA_MODEL = "qwen2.5-coder:latest";
+      process.env.OLLAMA_MAX_TOOLS_FOR_ROUTING = "2";
+      process.env.OPENROUTER_MAX_TOOLS_FOR_ROUTING = "5";
+      process.env.LLAMACPP_ENDPOINT = "http://localhost:8080";
+      process.env.FALLBACK_ENABLED = "true";
+      process.env.FALLBACK_PROVIDER = "llamacpp";
+
+      const config = require("../src/config");
+      const routing = require("../src/clients/routing");
+
+      // 10 tools - above both thresholds, should go to fallback provider (llamacpp)
+      const payload = {
+        messages: [{ role: "user", content: "test" }],
+        tools: Array.from({ length: 10 }, (_, i) => ({ name: `tool${i}`, description: "test" })),
+      };
+
+      const provider = routing.determineProvider(payload);
+      // Should route to llamacpp as the configured fallback provider
+      assert.strictEqual(provider, "llamacpp");
+    });
+
+    it("should use llamacpp as fallback provider when configured", () => {
+      process.env.MODEL_PROVIDER = "ollama";
+      process.env.PREFER_OLLAMA = "true";
+      process.env.OLLAMA_MODEL = "qwen2.5-coder:latest";
+      process.env.FALLBACK_PROVIDER = "llamacpp";
+      process.env.LLAMACPP_ENDPOINT = "http://localhost:8080";
+      process.env.FALLBACK_ENABLED = "true";
+
+      const config = require("../src/config");
+      const routing = require("../src/clients/routing");
+
+      assert.strictEqual(routing.getFallbackProvider(), "llamacpp");
+    });
+  });
+
+  describe("Response Conversion", () => {
+    // llama.cpp uses OpenAI-compatible format, so we reuse the same converter
+
+    it("should convert llama.cpp text response to Anthropic format", () => {
+      process.env.MODEL_PROVIDER = "databricks";
+      process.env.DATABRICKS_API_KEY = "test-key";
+      process.env.DATABRICKS_API_BASE = "http://test.com";
+
+      const { convertOpenRouterResponseToAnthropic } = require("../src/clients/openrouter-utils");
+
+      const llamacppResponse = {
+        id: "chatcmpl-123",
+        object: "chat.completion",
+        created: 1677652288,
+        model: "qwen2.5-coder-7b",
+        choices: [
+          {
+            index: 0,
+            message: {
+              role: "assistant",
+              content: "Hello! I'm running on llama.cpp."
+            },
+            finish_reason: "stop"
+          }
+        ],
+        usage: {
+          prompt_tokens: 9,
+          completion_tokens: 12,
+          total_tokens: 21
+        }
+      };
+
+      const result = convertOpenRouterResponseToAnthropic(llamacppResponse, "claude-sonnet-4-5");
+
+      assert.strictEqual(result.role, "assistant");
+      assert.strictEqual(result.model, "claude-sonnet-4-5");
+      assert.strictEqual(Array.isArray(result.content), true);
+      assert.strictEqual(result.content.length, 1);
+      assert.strictEqual(result.content[0].type, "text");
+      assert.strictEqual(result.content[0].text, "Hello! I'm running on llama.cpp.");
+      assert.strictEqual(result.stop_reason, "end_turn");
+      assert.strictEqual(result.usage.input_tokens, 9);
+      assert.strictEqual(result.usage.output_tokens, 12);
+    });
+
+    it("should convert llama.cpp tool call response to Anthropic format", () => {
+      process.env.MODEL_PROVIDER = "databricks";
+      process.env.DATABRICKS_API_KEY = "test-key";
+      process.env.DATABRICKS_API_BASE = "http://test.com";
+
+      const { convertOpenRouterResponseToAnthropic } = require("../src/clients/openrouter-utils");
+
+      const llamacppResponse = {
+        id: "chatcmpl-123",
+        object: "chat.completion",
+        model: "qwen2.5-coder-7b",
+        choices: [
+          {
+            index: 0,
+            message: {
+              role: "assistant",
+              content: "I'll read that file for you.",
+              tool_calls: [
+                {
+                  id: "call_abc123",
+                  type: "function",
+                  function: {
+                    name: "Read",
+                    arguments: JSON.stringify({
+                      file_path: "/tmp/example.txt"
+                    })
+                  }
+                }
+              ]
+            },
+            finish_reason: "tool_calls"
+          }
+        ],
+        usage: {
+          prompt_tokens: 50,
+          completion_tokens: 30,
+          total_tokens: 80
+        }
+      };
+
+      const result = convertOpenRouterResponseToAnthropic(llamacppResponse, "claude-sonnet-4-5");
+
+      assert.strictEqual(result.role, "assistant");
+      assert.strictEqual(result.content.length, 2); // text + tool_use
+      assert.strictEqual(result.content[0].type, "text");
+      assert.strictEqual(result.content[0].text, "I'll read that file for you.");
+      assert.strictEqual(result.content[1].type, "tool_use");
+      assert.strictEqual(result.content[1].name, "Read");
+      assert.strictEqual(result.content[1].id, "call_abc123");
+      assert.deepStrictEqual(result.content[1].input, {
+        file_path: "/tmp/example.txt"
+      });
+      assert.strictEqual(result.stop_reason, "tool_use");
+    });
+
+    it("should convert llama.cpp parallel tool calls to Anthropic format", () => {
+      process.env.MODEL_PROVIDER = "databricks";
+      process.env.DATABRICKS_API_KEY = "test-key";
+      process.env.DATABRICKS_API_BASE = "http://test.com";
+
+      const { convertOpenRouterResponseToAnthropic } = require("../src/clients/openrouter-utils");
+
+      const llamacppResponse = {
+        id: "chatcmpl-123",
+        model: "qwen2.5-coder-7b",
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content: "I'll search for both patterns.",
+              tool_calls: [
+                {
+                  id: "call_1",
+                  type: "function",
+                  function: {
+                    name: "Grep",
+                    arguments: JSON.stringify({ pattern: "TODO" })
+                  }
+                },
+                {
+                  id: "call_2",
+                  type: "function",
+                  function: {
+                    name: "Grep",
+                    arguments: JSON.stringify({ pattern: "FIXME" })
+                  }
+                }
+              ]
+            },
+            finish_reason: "tool_calls"
+          }
+        ],
+        usage: { prompt_tokens: 30, completion_tokens: 40, total_tokens: 70 }
+      };
+
+      const result = convertOpenRouterResponseToAnthropic(llamacppResponse, "claude-sonnet-4-5");
+
+      assert.strictEqual(result.content.length, 3); // text + 2 tool_uses
+      assert.strictEqual(result.content[0].type, "text");
+      assert.strictEqual(result.content[1].type, "tool_use");
+      assert.strictEqual(result.content[1].name, "Grep");
+      assert.strictEqual(result.content[1].id, "call_1");
+      assert.strictEqual(result.content[2].type, "tool_use");
+      assert.strictEqual(result.content[2].name, "Grep");
+      assert.strictEqual(result.content[2].id, "call_2");
+    });
+
+    it("should handle llama.cpp response with only tool calls (no text content)", () => {
+      process.env.MODEL_PROVIDER = "databricks";
+      process.env.DATABRICKS_API_KEY = "test-key";
+      process.env.DATABRICKS_API_BASE = "http://test.com";
+
+      const { convertOpenRouterResponseToAnthropic } = require("../src/clients/openrouter-utils");
+
+      const llamacppResponse = {
+        id: "chatcmpl-123",
+        model: "qwen2.5-coder-7b",
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content: null, // llama.cpp may return null content with tool calls
+              tool_calls: [
+                {
+                  id: "call_xyz",
+                  type: "function",
+                  function: {
+                    name: "Bash",
+                    arguments: JSON.stringify({ command: "pwd" })
+                  }
+                }
+              ]
+            },
+            finish_reason: "tool_calls"
+          }
+        ],
+        usage: { prompt_tokens: 20, completion_tokens: 15, total_tokens: 35 }
+      };
+
+      const result = convertOpenRouterResponseToAnthropic(llamacppResponse, "claude-sonnet-4-5");
+
+      // Should have tool_use block (at least one)
+      assert.strictEqual(result.role, "assistant");
+      assert.strictEqual(Array.isArray(result.content), true);
+      assert.strictEqual(result.content.length >= 1, true);
+      // Find the tool_use block
+      const toolUseBlock = result.content.find(c => c.type === "tool_use");
+      assert.strictEqual(toolUseBlock !== undefined, true);
+      assert.strictEqual(toolUseBlock.name, "Bash");
+    });
+  });
+
+  describe("Message Conversion", () => {
+    it("should convert Anthropic messages to llama.cpp (OpenAI) format", () => {
+      process.env.MODEL_PROVIDER = "databricks";
+      process.env.DATABRICKS_API_KEY = "test-key";
+      process.env.DATABRICKS_API_BASE = "http://test.com";
+
+      const { convertAnthropicMessagesToOpenRouter } = require("../src/clients/openrouter-utils");
+
+      const anthropicMessages = [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "What is 2 + 2?" }
+          ]
+        },
+        {
+          role: "assistant",
+          content: [
+            { type: "text", text: "2 + 2 equals 4." }
+          ]
+        }
+      ];
+
+      const result = convertAnthropicMessagesToOpenRouter(anthropicMessages);
+
+      assert.strictEqual(result.length, 2);
+      assert.strictEqual(result[0].role, "user");
+      assert.strictEqual(result[0].content, "What is 2 + 2?");
+      assert.strictEqual(result[1].role, "assistant");
+      assert.strictEqual(result[1].content, "2 + 2 equals 4.");
+    });
+
+    it("should convert Anthropic tool_result messages to llama.cpp (OpenAI) format", () => {
+      process.env.MODEL_PROVIDER = "databricks";
+      process.env.DATABRICKS_API_KEY = "test-key";
+      process.env.DATABRICKS_API_BASE = "http://test.com";
+
+      const { convertAnthropicMessagesToOpenRouter } = require("../src/clients/openrouter-utils");
+
+      // Must have a preceding assistant message with tool_use for tool_result to be valid
+      const anthropicMessages = [
+        {
+          role: "user",
+          content: [{ type: "text", text: "Run a command" }]
+        },
+        {
+          role: "assistant",
+          content: [
+            { type: "text", text: "I'll run that command." },
+            {
+              type: "tool_use",
+              id: "call_456",
+              name: "Bash",
+              input: { command: "echo hello" }
+            }
+          ]
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: "call_456",
+              content: "hello"
+            }
+          ]
+        }
+      ];
+
+      const result = convertAnthropicMessagesToOpenRouter(anthropicMessages);
+
+      // Should have user message, assistant message with tool call, and tool result
+      assert.strictEqual(result.length >= 3, true);
+      // Find the tool result message
+      const toolResultMsg = result.find(m => m.role === "tool");
+      assert.strictEqual(toolResultMsg !== undefined, true);
+      assert.strictEqual(toolResultMsg.tool_call_id, "call_456");
+      assert.strictEqual(toolResultMsg.content, "hello");
+    });
+  });
+
+  describe("Tool Conversion", () => {
+    it("should convert Anthropic tools to llama.cpp (OpenAI) format", () => {
+      process.env.MODEL_PROVIDER = "databricks";
+      process.env.DATABRICKS_API_KEY = "test-key";
+      process.env.DATABRICKS_API_BASE = "http://test.com";
+
+      const { convertAnthropicToolsToOpenRouter } = require("../src/clients/openrouter-utils");
+
+      const anthropicTools = [
+        {
+          name: "Read",
+          description: "Read a file from disk",
+          input_schema: {
+            type: "object",
+            properties: {
+              file_path: { type: "string", description: "Path to the file" }
+            },
+            required: ["file_path"]
+          }
+        }
+      ];
+
+      const result = convertAnthropicToolsToOpenRouter(anthropicTools);
+
+      assert.strictEqual(result.length, 1);
+      assert.strictEqual(result[0].type, "function");
+      assert.strictEqual(result[0].function.name, "Read");
+      assert.strictEqual(result[0].function.description, "Read a file from disk");
+      assert.deepStrictEqual(result[0].function.parameters, {
+        type: "object",
+        properties: {
+          file_path: { type: "string", description: "Path to the file" }
+        },
+        required: ["file_path"]
+      });
+    });
+  });
+
+  describe("Error Handling", () => {
+    it("should throw error when llama.cpp response has no choices", () => {
+      process.env.MODEL_PROVIDER = "databricks";
+      process.env.DATABRICKS_API_KEY = "test-key";
+      process.env.DATABRICKS_API_BASE = "http://test.com";
+
+      const { convertOpenRouterResponseToAnthropic } = require("../src/clients/openrouter-utils");
+
+      const errorResponse = {
+        error: {
+          message: "Model not loaded",
+          type: "invalid_request_error"
+        }
+      };
+
+      assert.throws(
+        () => convertOpenRouterResponseToAnthropic(errorResponse, "test-model"),
+        /No choices in OpenRouter response/
+      );
+    });
+
+    it("should throw error when llama.cpp response has empty choices array", () => {
+      process.env.MODEL_PROVIDER = "databricks";
+      process.env.DATABRICKS_API_KEY = "test-key";
+      process.env.DATABRICKS_API_BASE = "http://test.com";
+
+      const { convertOpenRouterResponseToAnthropic } = require("../src/clients/openrouter-utils");
+
+      const emptyChoicesResponse = {
+        id: "chatcmpl-123",
+        model: "qwen2.5-coder-7b",
+        choices: [],
+        usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
+      };
+
+      assert.throws(
+        () => convertOpenRouterResponseToAnthropic(emptyChoicesResponse, "test-model"),
+        /No choices in OpenRouter response/
+      );
+    });
+
+    it("should handle malformed tool call arguments gracefully", () => {
+      process.env.MODEL_PROVIDER = "databricks";
+      process.env.DATABRICKS_API_KEY = "test-key";
+      process.env.DATABRICKS_API_BASE = "http://test.com";
+
+      const { convertOpenRouterResponseToAnthropic } = require("../src/clients/openrouter-utils");
+
+      const responseWithBadArgs = {
+        id: "chatcmpl-123",
+        model: "qwen2.5-coder-7b",
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content: "Using tool",
+              tool_calls: [
+                {
+                  id: "call_bad",
+                  type: "function",
+                  function: {
+                    name: "Read",
+                    arguments: "invalid json {"
+                  }
+                }
+              ]
+            },
+            finish_reason: "tool_calls"
+          }
+        ],
+        usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 }
+      };
+
+      const result = convertOpenRouterResponseToAnthropic(responseWithBadArgs, "test-model");
+
+      // Should still convert, but with empty input object
+      assert.strictEqual(result.content[1].type, "tool_use");
+      assert.deepStrictEqual(result.content[1].input, {});
+    });
+  });
+
+  describe("Finish Reason Mapping", () => {
+    it("should map stop finish_reason to end_turn", () => {
+      process.env.MODEL_PROVIDER = "databricks";
+      process.env.DATABRICKS_API_KEY = "test-key";
+      process.env.DATABRICKS_API_BASE = "http://test.com";
+
+      const { convertOpenRouterResponseToAnthropic } = require("../src/clients/openrouter-utils");
+
+      const response = {
+        choices: [
+          {
+            message: { role: "assistant", content: "Complete" },
+            finish_reason: "stop"
+          }
+        ],
+        usage: { prompt_tokens: 5, completion_tokens: 1, total_tokens: 6 }
+      };
+
+      const result = convertOpenRouterResponseToAnthropic(response, "test-model");
+      assert.strictEqual(result.stop_reason, "end_turn");
+    });
+
+    it("should map tool_calls finish_reason to tool_use", () => {
+      process.env.MODEL_PROVIDER = "databricks";
+      process.env.DATABRICKS_API_KEY = "test-key";
+      process.env.DATABRICKS_API_BASE = "http://test.com";
+
+      const { convertOpenRouterResponseToAnthropic } = require("../src/clients/openrouter-utils");
+
+      const response = {
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content: "Executing tool",
+              tool_calls: [
+                {
+                  id: "call_1",
+                  type: "function",
+                  function: { name: "test", arguments: "{}" }
+                }
+              ]
+            },
+            finish_reason: "tool_calls"
+          }
+        ],
+        usage: { prompt_tokens: 5, completion_tokens: 10, total_tokens: 15 }
+      };
+
+      const result = convertOpenRouterResponseToAnthropic(response, "test-model");
+      assert.strictEqual(result.stop_reason, "tool_use");
+    });
+
+    it("should map length finish_reason to max_tokens", () => {
+      process.env.MODEL_PROVIDER = "databricks";
+      process.env.DATABRICKS_API_KEY = "test-key";
+      process.env.DATABRICKS_API_BASE = "http://test.com";
+
+      const { convertOpenRouterResponseToAnthropic } = require("../src/clients/openrouter-utils");
+
+      const response = {
+        choices: [
+          {
+            message: { role: "assistant", content: "Truncated response..." },
+            finish_reason: "length"
+          }
+        ],
+        usage: { prompt_tokens: 5, completion_tokens: 100, total_tokens: 105 }
+      };
+
+      const result = convertOpenRouterResponseToAnthropic(response, "test-model");
+      assert.strictEqual(result.stop_reason, "max_tokens");
+    });
+  });
+
+  describe("Usage Metrics", () => {
+    it("should correctly map llama.cpp usage to Anthropic format", () => {
+      process.env.MODEL_PROVIDER = "databricks";
+      process.env.DATABRICKS_API_KEY = "test-key";
+      process.env.DATABRICKS_API_BASE = "http://test.com";
+
+      const { convertOpenRouterResponseToAnthropic } = require("../src/clients/openrouter-utils");
+
+      const response = {
+        choices: [
+          {
+            message: { role: "assistant", content: "Response" },
+            finish_reason: "stop"
+          }
+        ],
+        usage: {
+          prompt_tokens: 200,
+          completion_tokens: 100,
+          total_tokens: 300
+        }
+      };
+
+      const result = convertOpenRouterResponseToAnthropic(response, "test-model");
+
+      assert.strictEqual(result.usage.input_tokens, 200);
+      assert.strictEqual(result.usage.output_tokens, 100);
+    });
+
+    it("should handle missing usage gracefully", () => {
+      process.env.MODEL_PROVIDER = "databricks";
+      process.env.DATABRICKS_API_KEY = "test-key";
+      process.env.DATABRICKS_API_BASE = "http://test.com";
+
+      const { convertOpenRouterResponseToAnthropic } = require("../src/clients/openrouter-utils");
+
+      const response = {
+        choices: [
+          {
+            message: { role: "assistant", content: "Response" },
+            finish_reason: "stop"
+          }
+        ]
+        // No usage field
+      };
+
+      const result = convertOpenRouterResponseToAnthropic(response, "test-model");
+
+      assert.strictEqual(result.usage.input_tokens, 0);
+      assert.strictEqual(result.usage.output_tokens, 0);
+    });
+  });
+});

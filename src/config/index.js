@@ -62,7 +62,7 @@ function resolveConfigPath(targetPath) {
   return path.resolve(normalised);
 }
 
-const SUPPORTED_MODEL_PROVIDERS = new Set(["databricks", "azure-anthropic", "ollama", "openrouter", "azure-openai", "openai"]);
+const SUPPORTED_MODEL_PROVIDERS = new Set(["databricks", "azure-anthropic", "ollama", "openrouter", "azure-openai", "openai", "llamacpp"]);
 const rawModelProvider = (process.env.MODEL_PROVIDER ?? "databricks").toLowerCase();
 const modelProvider = SUPPORTED_MODEL_PROVIDERS.has(rawModelProvider)
   ? rawModelProvider
@@ -96,6 +96,12 @@ const openAIModel = process.env.OPENAI_MODEL?.trim() || "gpt-4o";
 const openAIEndpoint = process.env.OPENAI_ENDPOINT?.trim() || "https://api.openai.com/v1/chat/completions";
 const openAIOrganization = process.env.OPENAI_ORGANIZATION?.trim() || null;
 
+// llama.cpp configuration
+const llamacppEndpoint = process.env.LLAMACPP_ENDPOINT?.trim() || "http://localhost:8080";
+const llamacppModel = process.env.LLAMACPP_MODEL?.trim() || "default";
+const llamacppTimeout = Number.parseInt(process.env.LLAMACPP_TIMEOUT_MS ?? "120000", 10);
+const llamacppApiKey = process.env.LLAMACPP_API_KEY?.trim() || null;
+
 // Hybrid routing configuration
 const preferOllama = process.env.PREFER_OLLAMA === "true";
 const fallbackEnabled = process.env.FALLBACK_ENABLED !== "false"; // default true
@@ -116,6 +122,18 @@ if (!["server", "client", "passthrough"].includes(toolExecutionMode)) {
     "TOOL_EXECUTION_MODE must be one of: server, client, passthrough (default: server)"
   );
 }
+
+// Memory system configuration (Titans-inspired long-term memory)
+const memoryEnabled = process.env.MEMORY_ENABLED !== "false"; // default true
+const memoryRetrievalLimit = Number.parseInt(process.env.MEMORY_RETRIEVAL_LIMIT ?? "5", 10);
+const memorySurpriseThreshold = Number.parseFloat(process.env.MEMORY_SURPRISE_THRESHOLD ?? "0.3");
+const memoryMaxAgeDays = Number.parseInt(process.env.MEMORY_MAX_AGE_DAYS ?? "90", 10);
+const memoryMaxCount = Number.parseInt(process.env.MEMORY_MAX_COUNT ?? "10000", 10);
+const memoryIncludeGlobal = process.env.MEMORY_INCLUDE_GLOBAL !== "false"; // default true
+const memoryInjectionFormat = (process.env.MEMORY_INJECTION_FORMAT ?? "system").toLowerCase();
+const memoryExtractionEnabled = process.env.MEMORY_EXTRACTION_ENABLED !== "false"; // default true
+const memoryDecayEnabled = process.env.MEMORY_DECAY_ENABLED !== "false"; // default true
+const memoryDecayHalfLifeDays = Number.parseInt(process.env.MEMORY_DECAY_HALF_LIFE ?? "30", 10);
 
 // Only require Databricks credentials if it's the primary provider or used as fallback
 if (modelProvider === "databricks" && (!rawBaseUrl || !apiKey)) {
@@ -150,6 +168,14 @@ if (modelProvider === "ollama") {
     new URL(ollamaEndpoint);
   } catch (err) {
     throw new Error("OLLAMA_ENDPOINT must be a valid URL (default: http://localhost:11434)");
+  }
+}
+
+if (modelProvider === "llamacpp") {
+  try {
+    new URL(llamacppEndpoint);
+  } catch (err) {
+    throw new Error("LLAMACPP_ENDPOINT must be a valid URL (default: http://localhost:8080)");
   }
 }
 
@@ -370,6 +396,12 @@ const config = {
     endpoint: openAIEndpoint,
     organization: openAIOrganization,
   },
+  llamacpp: {
+    endpoint: llamacppEndpoint,
+    model: llamacppModel,
+    timeout: Number.isNaN(llamacppTimeout) ? 120000 : llamacppTimeout,
+    apiKey: llamacppApiKey,
+  },
   modelProvider: {
     type: modelProvider,
     defaultModel,
@@ -488,6 +520,24 @@ const config = {
       files: testCoverageFiles,
     },
     profiles: Array.isArray(testProfiles) ? testProfiles : null,
+  },
+  memory: {
+    enabled: memoryEnabled,
+    retrievalLimit: Number.isNaN(memoryRetrievalLimit) ? 5 : memoryRetrievalLimit,
+    surpriseThreshold: Number.isNaN(memorySurpriseThreshold) ? 0.3 : memorySurpriseThreshold,
+    maxAgeDays: Number.isNaN(memoryMaxAgeDays) ? 90 : memoryMaxAgeDays,
+    maxCount: Number.isNaN(memoryMaxCount) ? 10000 : memoryMaxCount,
+    includeGlobalMemories: memoryIncludeGlobal,
+    injectionFormat: ["system", "assistant_preamble"].includes(memoryInjectionFormat)
+      ? memoryInjectionFormat
+      : "system",
+    extraction: {
+      enabled: memoryExtractionEnabled,
+    },
+    decay: {
+      enabled: memoryDecayEnabled,
+      halfLifeDays: Number.isNaN(memoryDecayHalfLifeDays) ? 30 : memoryDecayHalfLifeDays,
+    },
   },
 };
 

@@ -503,6 +503,77 @@ async function invokeOpenAI(body) {
   return performJsonRequest(endpoint, { headers, body: openAIBody }, "OpenAI");
 }
 
+async function invokeLlamaCpp(body) {
+  if (!config.llamacpp?.endpoint) {
+    throw new Error("llama.cpp endpoint is not configured.");
+  }
+
+  const {
+    convertAnthropicToolsToOpenRouter,
+    convertAnthropicMessagesToOpenRouter
+  } = require("./openrouter-utils");
+
+  const endpoint = `${config.llamacpp.endpoint}/v1/chat/completions`;
+  const headers = {
+    "Content-Type": "application/json",
+  };
+
+  // Add API key if configured (for secured llama.cpp servers)
+  if (config.llamacpp.apiKey) {
+    headers["Authorization"] = `Bearer ${config.llamacpp.apiKey}`;
+  }
+
+  // Convert messages to OpenAI format
+  const messages = convertAnthropicMessagesToOpenRouter(body.messages || []);
+
+  // Handle system message
+  if (body.system) {
+    messages.unshift({ role: "system", content: body.system });
+  }
+
+  const llamacppBody = {
+    messages,
+    temperature: body.temperature ?? 0.7,
+    max_tokens: body.max_tokens ?? 4096,
+    top_p: body.top_p ?? 1.0,
+    stream: body.stream ?? false
+  };
+
+  // Inject standard tools if client didn't send any
+  let toolsToSend = body.tools;
+  let toolsInjected = false;
+
+  if (!Array.isArray(toolsToSend) || toolsToSend.length === 0) {
+    toolsToSend = STANDARD_TOOLS;
+    toolsInjected = true;
+    logger.info({
+      injectedToolCount: STANDARD_TOOLS.length,
+      injectedToolNames: STANDARD_TOOLS.map(t => t.name),
+      reason: "Client did not send tools (passthrough mode)"
+    }, "=== INJECTING STANDARD TOOLS (llama.cpp) ===");
+  }
+
+  if (Array.isArray(toolsToSend) && toolsToSend.length > 0) {
+    llamacppBody.tools = convertAnthropicToolsToOpenRouter(toolsToSend);
+    llamacppBody.tool_choice = "auto";
+    logger.info({
+      toolCount: toolsToSend.length,
+      toolNames: toolsToSend.map(t => t.name),
+      toolsInjected
+    }, "=== SENDING TOOLS TO LLAMA.CPP ===");
+  }
+
+  logger.info({
+    endpoint,
+    hasTools: !!llamacppBody.tools,
+    toolCount: llamacppBody.tools?.length || 0,
+    temperature: llamacppBody.temperature,
+    max_tokens: llamacppBody.max_tokens,
+  }, "=== LLAMA.CPP REQUEST ===");
+
+  return performJsonRequest(endpoint, { headers, body: llamacppBody }, "llama.cpp");
+}
+
 async function invokeModel(body, options = {}) {
   const { determineProvider, isFallbackEnabled, getFallbackProvider } = require("./routing");
   const metricsCollector = getMetricsCollector();
@@ -544,6 +615,8 @@ async function invokeModel(body, options = {}) {
         return await invokeOpenRouter(body);
       } else if (initialProvider === "openai") {
         return await invokeOpenAI(body);
+      } else if (initialProvider === "llamacpp") {
+        return await invokeLlamaCpp(body);
       }
       return await invokeDatabricks(body);
     });
@@ -621,6 +694,8 @@ async function invokeModel(body, options = {}) {
           return await invokeOpenRouter(body);
         } else if (fallbackProvider === "openai") {
           return await invokeOpenAI(body);
+        } else if (fallbackProvider === "llamacpp") {
+          return await invokeLlamaCpp(body);
         }
         return await invokeDatabricks(body);
       });

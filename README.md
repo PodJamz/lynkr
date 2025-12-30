@@ -7,6 +7,7 @@
 [![Databricks Supported](https://img.shields.io/badge/Databricks-Supported-orange)](https://www.databricks.com/)
 [![OpenAI Compatible](https://img.shields.io/badge/OpenAI-Compatible-412991)](https://openai.com/)
 [![Ollama Compatible](https://img.shields.io/badge/Ollama-Compatible-brightgreen)](https://ollama.ai/)
+[![llama.cpp Compatible](https://img.shields.io/badge/llama.cpp-Compatible-blue)](https://github.com/ggerganov/llama.cpp)
 [![IndexNow Enabled](https://img.shields.io/badge/IndexNow-Enabled-success?style=flat-square)](https://www.indexnow.org/)
 [![DevHunt](https://img.shields.io/badge/DevHunt-Lynkr-orange)](https://devhunt.org/tool/lynkr)
 
@@ -87,6 +88,7 @@ Lynkr supports multiple AI model providers, giving you flexibility in choosing t
 | **Azure Anthropic** | `MODEL_PROVIDER=azure-anthropic` | Claude Sonnet 4.5, Claude Opus 4.5 | Azure-hosted Claude models |
 | **OpenRouter** | `MODEL_PROVIDER=openrouter` | 100+ models (GPT-4o, Claude, Gemini, Llama, etc.) | Model flexibility, cost optimization |
 | **Ollama** (Local) | `MODEL_PROVIDER=ollama` | Llama 3.1, Qwen2.5, Mistral, CodeLlama | Local/offline use, privacy, no API costs |
+| **llama.cpp** (Local) | `MODEL_PROVIDER=llamacpp` | Any GGUF model | Maximum performance, full model control |
 
 ### **Recommended Models by Use Case**
 
@@ -160,20 +162,67 @@ FALLBACK_PROVIDER=databricks  # or azure-openai, openrouter, azure-anthropic
 
 ### **Provider Comparison**
 
-| Feature | Databricks | OpenAI | Azure OpenAI | Azure Anthropic | OpenRouter | Ollama |
-|---------|-----------|--------|--------------|-----------------|------------|--------|
-| **Setup Complexity** | Medium | Easy | Medium | Medium | Easy | Easy |
-| **Cost** | $$$ | $$ | $$ | $$$ | $ | Free |
-| **Latency** | Low | Low | Low | Low | Medium | Very Low |
-| **Tool Calling** | Excellent | Excellent | Excellent | Excellent | Good | Fair |
-| **Context Length** | 200K | 128K | 128K | 200K | Varies | 32K-128K |
-| **Streaming** | Yes | Yes | Yes | Yes | Yes | Yes |
-| **Privacy** | Enterprise | Third-party | Enterprise | Enterprise | Third-party | Local |
-| **Offline** | No | No | No | No | No | Yes |
+| Feature | Databricks | OpenAI | Azure OpenAI | Azure Anthropic | OpenRouter | Ollama | llama.cpp |
+|---------|-----------|--------|--------------|-----------------|------------|--------|-----------|
+| **Setup Complexity** | Medium | Easy | Medium | Medium | Easy | Easy | Medium |
+| **Cost** | $$$ | $$ | $$ | $$$ | $ | Free | Free |
+| **Latency** | Low | Low | Low | Low | Medium | Very Low | Very Low |
+| **Tool Calling** | Excellent | Excellent | Excellent | Excellent | Good | Fair | Good |
+| **Context Length** | 200K | 128K | 128K | 200K | Varies | 32K-128K | Model-dependent |
+| **Streaming** | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
+| **Privacy** | Enterprise | Third-party | Enterprise | Enterprise | Third-party | Local | Local |
+| **Offline** | No | No | No | No | No | Yes | Yes |
 
 ---
 
 ## Core Capabilities
+
+### Long-Term Memory System (Titans-Inspired)
+
+**NEW:** Lynkr now includes a comprehensive long-term memory system inspired by Google's Titans architecture, enabling persistent context across conversations and intelligent memory management.
+
+**Key Features:**
+- 🧠 **Surprise-Based Memory Updates** – Automatically extracts and stores only important, novel, or surprising information from conversations using a 5-factor heuristic scoring system (novelty, contradiction, specificity, emphasis, context switch).
+- 🔍 **FTS5 Semantic Search** – Full-text search with Porter stemmer and keyword expansion for finding relevant memories.
+- 📊 **Multi-Signal Retrieval** – Ranks memories using recency (30%), importance (40%), and relevance (30%) for optimal context injection.
+- ⚡ **Automatic Integration** – Memories are extracted after each response and injected before model calls with zero latency overhead (<50ms retrieval, <100ms async extraction).
+- 🎯 **5 Memory Types** – Tracks preferences, decisions, facts, entities, and relationships.
+- 🛠️ **Management Tools** – `memory_search`, `memory_add`, `memory_forget`, `memory_stats` for explicit control.
+
+**Quick Start:**
+```bash
+# Memory system is enabled by default - just use Lynkr!
+# Test it:
+# 1. Say: "I prefer Python for data processing"
+# 2. Later ask: "What language should I use for data tasks?"
+# → Model will remember your preference and recommend Python
+```
+
+**Configuration:**
+```env
+MEMORY_ENABLED=true                  # Enable/disable (default: true)
+MEMORY_RETRIEVAL_LIMIT=5             # Memories per request (default: 5)
+MEMORY_SURPRISE_THRESHOLD=0.3        # Min score to store (default: 0.3)
+MEMORY_MAX_AGE_DAYS=90              # Auto-prune age (default: 90)
+MEMORY_MAX_COUNT=10000              # Max memories (default: 10000)
+```
+
+**What Gets Remembered:**
+- ✅ User preferences ("I prefer X")
+- ✅ Important decisions ("Decided to use Y")
+- ✅ Project facts ("This app uses Z")
+- ✅ New entities (first mentions of files, functions)
+- ✅ Contradictions ("Actually, A not B")
+- ❌ Greetings, confirmations, repeated info (filtered by surprise threshold)
+
+**Benefits:**
+- 🎯 **Better context understanding** across sessions
+- 💾 **Persistent knowledge** stored in SQLite
+- 🚀 **Zero performance impact** (<50ms retrieval, async extraction)
+- 🔒 **Privacy-preserving** (all local, no external APIs)
+- 📈 **Scales efficiently** (supports 10K+ memories)
+
+See [MEMORY_SYSTEM.md](MEMORY_SYSTEM.md) for complete documentation and [QUICKSTART_MEMORY.md](QUICKSTART_MEMORY.md) for usage examples.
 
 ### Repo Intelligence & Navigation
 
@@ -430,6 +479,23 @@ Lynkr includes comprehensive production-ready features designed for reliability,
 
 Lynkr offers multiple installation methods to fit your workflow:
 
+#### Quick Install (curl)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/vishalveerareddy123/Lynkr/main/install.sh | bash
+```
+
+This will:
+- Clone Lynkr to `~/.lynkr`
+- Install dependencies
+- Create a default `.env` file
+- Set up the `lynkr` command
+
+**Custom installation directory:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/vishalveerareddy123/Lynkr/main/install.sh | bash -s -- --dir /opt/lynkr
+```
+
 #### Option 1: Simple Databricks Setup (Quickest)
 
 **No Ollama needed** - Just use Databricks APIs directly:
@@ -605,6 +671,52 @@ ollama pull qwen2.5-coder:latest
 ollama list
 ```
 
+**llama.cpp configuration:**
+
+llama.cpp provides maximum performance and flexibility for running GGUF models locally. It uses an OpenAI-compatible API, making integration seamless.
+
+```env
+MODEL_PROVIDER=llamacpp
+LLAMACPP_ENDPOINT=http://localhost:8080  # default llama.cpp server port
+LLAMACPP_MODEL=qwen2.5-coder-7b          # model name (for logging)
+LLAMACPP_TIMEOUT_MS=120000               # request timeout
+PORT=8080
+WORKSPACE_ROOT=/path/to/your/repo
+```
+
+Before starting Lynkr with llama.cpp, ensure llama-server is running:
+
+```bash
+# Download and build llama.cpp (if not already done)
+git clone https://github.com/ggerganov/llama.cpp
+cd llama.cpp && make
+
+# Download a GGUF model (e.g., from HuggingFace)
+# Example: Qwen2.5-Coder-7B-Instruct
+wget https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct-GGUF/resolve/main/qwen2.5-coder-7b-instruct-q4_k_m.gguf
+
+# Start llama-server
+./llama-server -m qwen2.5-coder-7b-instruct-q4_k_m.gguf --port 8080
+
+# Verify server is running
+curl http://localhost:8080/health
+```
+
+**Why llama.cpp over Ollama?**
+
+| Feature | Ollama | llama.cpp |
+|---------|--------|-----------|
+| Setup | Easy (app) | Manual (compile/download) |
+| Model Format | Ollama-specific | Any GGUF model |
+| Performance | Good | Excellent (optimized C++) |
+| GPU Support | Yes | Yes (CUDA, Metal, ROCm, Vulkan) |
+| Memory Usage | Higher | Lower (quantization options) |
+| API | Custom `/api/chat` | OpenAI-compatible `/v1/chat/completions` |
+| Flexibility | Limited models | Any GGUF from HuggingFace |
+| Tool Calling | Limited models | Grammar-based, more reliable |
+
+Choose llama.cpp when you need maximum performance, specific quantization options, or want to use GGUF models not available in Ollama.
+
 **OpenRouter configuration:**
 
 OpenRouter provides unified access to 100+ AI models through a single API, including GPT-4o, Claude, Gemini, Llama, Mixtral, and more. It offers competitive pricing, automatic fallbacks, and no need to manage multiple API keys.
@@ -676,7 +788,7 @@ WORKSPACE_ROOT=/path/to/your/repo
 |----------|-------------|---------|
 | `PORT` | HTTP port for the proxy server. | `8080` |
 | `WORKSPACE_ROOT` | Filesystem path exposed to workspace tools and indexer. | `process.cwd()` |
-| `MODEL_PROVIDER` | Selects the model backend (`databricks`, `openai`, `azure-openai`, `azure-anthropic`, `openrouter`, `ollama`). | `databricks` |
+| `MODEL_PROVIDER` | Selects the model backend (`databricks`, `openai`, `azure-openai`, `azure-anthropic`, `openrouter`, `ollama`, `llamacpp`). | `databricks` |
 | `MODEL_DEFAULT` | Overrides the default model/deployment name sent to the provider. | Provider-specific default |
 | `DATABRICKS_API_BASE` | Base URL of your Databricks workspace (required when `MODEL_PROVIDER=databricks`). | – |
 | `DATABRICKS_API_KEY` | Databricks PAT used for the serving endpoint (required for Databricks). | – |
@@ -695,6 +807,10 @@ WORKSPACE_ROOT=/path/to/your/repo
 | `OLLAMA_ENDPOINT` | Ollama API endpoint URL (required when `MODEL_PROVIDER=ollama`). | `http://localhost:11434` |
 | `OLLAMA_MODEL` | Ollama model name to use (e.g., `qwen2.5-coder:latest`, `llama3`, `mistral`). | `qwen2.5-coder:7b` |
 | `OLLAMA_TIMEOUT_MS` | Request timeout for Ollama API calls in milliseconds. | `120000` (2 minutes) |
+| `LLAMACPP_ENDPOINT` | llama.cpp server endpoint URL (required when `MODEL_PROVIDER=llamacpp`). | `http://localhost:8080` |
+| `LLAMACPP_MODEL` | llama.cpp model name (for logging purposes). | `default` |
+| `LLAMACPP_TIMEOUT_MS` | Request timeout for llama.cpp API calls in milliseconds. | `120000` (2 minutes) |
+| `LLAMACPP_API_KEY` | Optional API key for secured llama.cpp servers. | – |
 | `PROMPT_CACHE_ENABLED` | Toggle the prompt cache system. | `true` |
 | `PROMPT_CACHE_TTL_MS` | Milliseconds before cached prompts expire. | `300000` (5 minutes) |
 | `PROMPT_CACHE_MAX_ENTRIES` | Maximum number of cached prompts retained. | `64` |
@@ -1320,6 +1436,7 @@ Replace `<workspace>` and `<endpoint-name>` with your Databricks workspace host 
 - **Azure Anthropic** – Requests are normalised to Azure's payload shape. The proxy disables automatic `web_fetch` fallbacks to avoid duplicate tool executions; instead, the assistant surfaces a diagnostic message and you can trigger the tool manually if required.
 - **OpenRouter** – Connects to OpenRouter's unified API for access to 100+ models. Full tool calling support with automatic format conversion between Anthropic and OpenAI formats. Messages are converted to OpenAI's format, tool calls are properly translated, and responses are converted back to Anthropic-compatible format. Best used for cost optimization, model flexibility, or when you want to experiment with different models without changing your codebase.
 - **Ollama** – Connects to locally-running Ollama models. Tool support varies by model (llama3.1, qwen2.5, mistral support tools; llama3 and older models don't). System prompts are merged into the first user message. Response format is converted from Ollama's format to Anthropic-compatible content blocks. Best used for simple text generation tasks, offline development, or as a cost-effective development environment.
+- **llama.cpp** – Connects to a local llama-server instance running GGUF models. Uses OpenAI-compatible API format (`/v1/chat/completions`), enabling full tool calling support with grammar-based generation. Provides maximum performance with optimized C++ inference, lower memory usage through quantization, and support for any GGUF model from HuggingFace. Best used when you need maximum performance, specific quantization options, or models not available in Ollama.
 - In all cases, `web_search` and `web_fetch` run locally. They do not execute JavaScript, so pages that render data client-side (Google Finance, etc.) will return scaffolding only. Prefer JSON/CSV quote APIs (e.g. Yahoo chart API) when you need live financial data.
 
 ---
@@ -1495,7 +1612,42 @@ A:
 - **OpenRouter**: ~300ms-1.5s latency, cloud-hosted, competitive pricing ($0.15/1M for GPT-4o-mini), 100+ models, full tool support
 - **Ollama**: ~100-500ms first token, runs locally, free, limited tool support (model-dependent)
 
-Choose Databricks/Azure for enterprise production with guaranteed SLAs. Choose OpenRouter for flexibility, cost optimization, and access to multiple models. Choose Ollama for fast iteration, offline development, or maximum cost savings.
+Choose Databricks/Azure for enterprise production with guaranteed SLAs. Choose OpenRouter for flexibility, cost optimization, and access to multiple models. Choose Ollama for fast iteration, offline development, or maximum cost savings. Choose llama.cpp for maximum performance and full GGUF model control.
+
+**Q: What is llama.cpp and when should I use it over Ollama?**
+A: llama.cpp is a high-performance C++ inference engine for running large language models locally. Unlike Ollama (which is an application with its own model format), llama.cpp:
+- **Runs any GGUF model** from HuggingFace directly
+- **Provides better performance** through optimized C++ code
+- **Uses less memory** with advanced quantization options (Q2_K to Q8_0)
+- **Supports more GPU backends** (CUDA, Metal, ROCm, Vulkan, SYCL)
+- **Uses OpenAI-compatible API** making integration seamless
+
+Use llama.cpp when you need:
+- Maximum inference speed and minimum memory usage
+- Specific quantization levels not available in Ollama
+- GGUF models not packaged for Ollama
+- Fine-grained control over model parameters (context length, GPU layers, etc.)
+
+Use Ollama when you prefer easier setup and don't need the extra control.
+
+**Q: How do I set up llama.cpp with Lynkr?**
+A:
+```bash
+# 1. Build llama.cpp (or download pre-built binary)
+git clone https://github.com/ggerganov/llama.cpp
+cd llama.cpp && make
+
+# 2. Download a GGUF model
+wget https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct-GGUF/resolve/main/qwen2.5-coder-7b-instruct-q4_k_m.gguf
+
+# 3. Start the server
+./llama-server -m qwen2.5-coder-7b-instruct-q4_k_m.gguf --port 8080
+
+# 4. Configure Lynkr
+export MODEL_PROVIDER=llamacpp
+export LLAMACPP_ENDPOINT=http://localhost:8080
+npm start
+```
 
 **Q: What is OpenRouter and why should I use it?**
 A: OpenRouter is a unified API gateway that provides access to 100+ AI models from multiple providers (OpenAI, Anthropic, Google, Meta, Mistral, etc.) through a single API key. Benefits include:

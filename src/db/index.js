@@ -218,6 +218,124 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_test_runs_status
     ON test_runs(status);
+
+  -- Memory system tables (Titans-inspired long-term memory)
+  CREATE TABLE IF NOT EXISTS memories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT,
+    content TEXT NOT NULL,
+    type TEXT NOT NULL,
+    category TEXT,
+    importance REAL DEFAULT 0.5,
+    surprise_score REAL DEFAULT 0.0,
+    access_count INTEGER DEFAULT 0,
+    decay_factor REAL DEFAULT 1.0,
+    source_turn_id INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    last_accessed_at INTEGER,
+    metadata TEXT,
+    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE SET NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_memories_session_id
+    ON memories(session_id);
+
+  CREATE INDEX IF NOT EXISTS idx_memories_type
+    ON memories(type);
+
+  CREATE INDEX IF NOT EXISTS idx_memories_category
+    ON memories(category);
+
+  CREATE INDEX IF NOT EXISTS idx_memories_importance
+    ON memories(importance DESC);
+
+  CREATE INDEX IF NOT EXISTS idx_memories_surprise
+    ON memories(surprise_score DESC);
+
+  CREATE INDEX IF NOT EXISTS idx_memories_created_at
+    ON memories(created_at DESC);
+
+  CREATE INDEX IF NOT EXISTS idx_memories_last_accessed
+    ON memories(last_accessed_at DESC);
+
+  -- Full-text search for memories
+  CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
+    content,
+    type,
+    category,
+    content=memories,
+    content_rowid=id,
+    tokenize="porter unicode61"
+  );
+`)
+
+;
+
+// FTS5 triggers to keep search index in sync
+db.exec(`
+  CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON memories BEGIN
+    INSERT INTO memories_fts(rowid, content, type, category)
+    VALUES (new.id, new.content, new.type, new.category);
+  END;
+
+  CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON memories BEGIN
+    INSERT INTO memories_fts(memories_fts, rowid, content, type, category)
+    VALUES ('delete', old.id, old.content, old.type, old.category);
+  END;
+
+  CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN
+    INSERT INTO memories_fts(memories_fts, rowid, content, type, category)
+    VALUES ('delete', old.id, old.content, old.type, old.category);
+    INSERT INTO memories_fts(rowid, content, type, category)
+    VALUES (new.id, new.content, new.type, new.category);
+  END;
+`);
+
+db.exec(`
+  -- Memory embeddings for optional semantic search
+  CREATE TABLE IF NOT EXISTS memory_embeddings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    memory_id INTEGER NOT NULL UNIQUE,
+    embedding BLOB NOT NULL,
+    model TEXT NOT NULL,
+    dimensions INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY (memory_id) REFERENCES memories(id) ON DELETE CASCADE
+  );
+
+  -- Entity tracking for surprise detection
+  CREATE TABLE IF NOT EXISTS memory_entities (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_type TEXT NOT NULL,
+    entity_name TEXT NOT NULL,
+    first_seen_at INTEGER NOT NULL,
+    last_seen_at INTEGER NOT NULL,
+    occurrence_count INTEGER DEFAULT 1,
+    properties TEXT,
+    UNIQUE(entity_type, entity_name)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_memory_entities_type_name
+    ON memory_entities(entity_type, entity_name);
+
+  -- Memory associations (graph relationships)
+  CREATE TABLE IF NOT EXISTS memory_associations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    from_memory_id INTEGER NOT NULL,
+    to_memory_id INTEGER NOT NULL,
+    relationship TEXT,
+    strength REAL DEFAULT 0.5,
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY (from_memory_id) REFERENCES memories(id) ON DELETE CASCADE,
+    FOREIGN KEY (to_memory_id) REFERENCES memories(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_memory_associations_from
+    ON memory_associations(from_memory_id);
+
+  CREATE INDEX IF NOT EXISTS idx_memory_associations_to
+    ON memory_associations(to_memory_id);
 `);
 
 logger.info({ dbPath }, "SQLite session store initialised");

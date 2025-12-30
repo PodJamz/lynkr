@@ -72,6 +72,12 @@ function determineProvider(payload) {
         "Routing to Azure OpenAI (moderate tools)"
       );
       return "azure-openai";
+    } else if (config.llamacpp?.endpoint) {
+      logger.debug(
+        { toolCount, maxToolsForOllama, maxToolsForOpenRouter, decision: "llamacpp" },
+        "Routing to llama.cpp (moderate tools)"
+      );
+      return "llamacpp";
     }
   }
 
