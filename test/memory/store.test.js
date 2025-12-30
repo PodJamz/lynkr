@@ -10,42 +10,54 @@ describe("Memory Store", () => {
   let originalDb;
 
   beforeEach(() => {
-    // Create a temporary test database
-    testDbPath = path.join(__dirname, `../../data/test-memory-${Date.now()}.db`);
+    // Create a unique temporary test database
+    const timestamp = Date.now();
+    const random = Math.floor(Math.random() * 1000000);
+    testDbPath = path.join(__dirname, `../../data/test-store-${timestamp}-${random}.db`);
 
-    // Clear module cache
+    // Set test environment to new database (correct env var is SESSION_DB_PATH)
+    process.env.SESSION_DB_PATH = testDbPath;
+
+    // Clear ALL module cache to ensure fresh config is loaded
+    delete require.cache[require.resolve("../../src/config")];
     delete require.cache[require.resolve("../../src/db")];
     delete require.cache[require.resolve("../../src/memory/store")];
 
-    // Set test environment
-    process.env.DB_PATH = testDbPath;
-
-    // Initialize database with schema
-    const db = require("../../src/db");
-
-    // Clear all existing data to ensure clean state
-    db.prepare("DELETE FROM memories").run();
-    db.prepare("DELETE FROM memory_entities").run();
-    db.prepare("DELETE FROM memory_embeddings").run();
-    db.prepare("DELETE FROM memory_associations").run();
+    // Initialize database with schema (this creates a fresh database)
+    require("../../src/db");
 
     // Load store module
     store = require("../../src/memory/store");
   });
 
   afterEach(() => {
-    // Close database connection before cleanup
+    // Close database connection first
     try {
       const db = require("../../src/db");
-      db.close();
+      if (db && typeof db.close === 'function') {
+        db.close();
+      }
     } catch (err) {
       // Ignore if already closed
     }
 
-    // Clean up test database
+    // Clear module cache to release all references
+    delete require.cache[require.resolve("../../src/db")];
+    delete require.cache[require.resolve("../../src/memory/store")];
+
+    // Clean up all SQLite files (db, wal, shm)
     try {
-      if (fs.existsSync(testDbPath)) {
-        fs.unlinkSync(testDbPath);
+      const files = [
+        testDbPath,
+        `${testDbPath}-wal`,
+        `${testDbPath}-shm`,
+        `${testDbPath}-journal`
+      ];
+
+      for (const file of files) {
+        if (fs.existsSync(file)) {
+          fs.unlinkSync(file);
+        }
       }
     } catch (err) {
       // Ignore cleanup errors

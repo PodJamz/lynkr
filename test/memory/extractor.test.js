@@ -12,11 +12,13 @@ describe("Memory Extractor", () => {
     // Save original environment
     originalEnv = { ...process.env };
 
-    // Create a temporary test database
-    testDbPath = path.join(__dirname, `../../data/test-extractor-${Date.now()}.db`);
+    // Create a unique temporary test database
+    const timestamp = Date.now();
+    const random = Math.floor(Math.random() * 1000000);
+    testDbPath = path.join(__dirname, `../../data/test-extractor-${timestamp}-${random}.db`);
 
     // Set test environment BEFORE loading any modules
-    process.env.DB_PATH = testDbPath;
+    process.env.SESSION_DB_PATH = testDbPath;
     process.env.MEMORY_SURPRISE_THRESHOLD = "0.1"; // Very low threshold for tests
     process.env.MEMORY_ENABLED = "true";
     process.env.MEMORY_EXTRACTION_ENABLED = "true";
@@ -36,13 +38,39 @@ describe("Memory Extractor", () => {
   });
 
   afterEach(() => {
+    // Close database connection first
+    try {
+      const db = require("../../src/db");
+      if (db && typeof db.close === 'function') {
+        db.close();
+      }
+    } catch (err) {
+      // Ignore if already closed
+    }
+
+    // Clear module cache to release all references
+    Object.keys(require.cache).forEach(key => {
+      if (key.includes('/src/')) {
+        delete require.cache[key];
+      }
+    });
+
     // Restore environment
     process.env = originalEnv;
 
-    // Clean up test database
+    // Clean up all SQLite files (db, wal, shm)
     try {
-      if (fs.existsSync(testDbPath)) {
-        fs.unlinkSync(testDbPath);
+      const files = [
+        testDbPath,
+        `${testDbPath}-wal`,
+        `${testDbPath}-shm`,
+        `${testDbPath}-journal`
+      ];
+
+      for (const file of files) {
+        if (fs.existsSync(file)) {
+          fs.unlinkSync(file);
+        }
       }
     } catch (err) {
       // Ignore cleanup errors

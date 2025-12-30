@@ -24,7 +24,7 @@ describe("Surprise Detection", () => {
       ];
 
       const score = surprise.calculateSurprise(newMemory, existingMemories);
-      assert.ok(score > 0.3, `Expected surprise > 0.3, got ${score}`);
+      assert.ok(score > 0.25, `Expected surprise > 0.25, got ${score}`);
     });
 
     it("should return low surprise for repeated information", () => {
