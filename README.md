@@ -90,8 +90,6 @@ Lynkr is a **production-ready proxy server** that unlocks Claude Code CLI's full
 ### 1️⃣ Install
 ```bash
 npm install -g lynkr
-# or
-brew install lynkr
 ```
 
 ### 2️⃣ Configure Your Provider
