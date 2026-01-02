@@ -309,8 +309,9 @@ FALLBACK_PROVIDER=databricks  # or azure-openai, openrouter, azure-anthropic
 
 1. ⭐ **[Star this repo](https://github.com/vishalveerareddy123/Lynkr)** to show support and stay updated
 2. 📖 **[Follow the Quick Start Guide](#quick-start-3-minutes)** to install and configure Lynkr
-3. 💬 **[Join the Discussion](https://github.com/vishalveerareddy123/Lynkr/discussions)** for community support
-4. 🐛 **[Report Issues](https://github.com/vishalveerareddy123/Lynkr/issues)** to help improve Lynkr
+3. 💬 **[Join our Discord](https://discord.gg/qF7DDxrX)** for real-time community support
+4. 💬 **[Join the Discussion](https://github.com/vishalveerareddy123/Lynkr/discussions)** for questions and ideas
+5. 🐛 **[Report Issues](https://github.com/vishalveerareddy123/Lynkr/issues)** to help improve Lynkr
 
 ---
 
@@ -2217,6 +2218,7 @@ For BibTeX citations, see [CITATIONS.bib](CITATIONS.bib).
 
 - 🐛 **Report Issues:** [GitHub Issues](https://github.com/vishalveerareddy123/Lynkr/issues) - Bug reports and feature requests
 - 💬 **Discussions:** [GitHub Discussions](https://github.com/vishalveerareddy123/Lynkr/discussions) - Questions, ideas, and community help
+- 💬 **Discord Community:** [Join our Discord](https://discord.gg/qF7DDxrX) - Real-time chat and community support
 - 📚 **Documentation:** [DeepWiki](https://deepwiki.com/vishalveerareddy123/Lynkr) - Comprehensive guides and examples
 - 🔧 **Contributing:** [CONTRIBUTING.md](CONTRIBUTING.md) - How to contribute to Lynkr
 
