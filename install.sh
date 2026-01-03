@@ -16,7 +16,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-REPO_URL="https://github.com/vishalveerareddy123/Lynkr"
+REPO_URL="https://github.com/Fast-Editor/Lynkr"
 INSTALL_DIR="${LYNKR_INSTALL_DIR:-$HOME/.lynkr}"
 BRANCH="${LYNKR_BRANCH:-main}"
 
@@ -115,12 +115,19 @@ install_dependencies() {
 # Create default .env file
 create_env_file() {
     if [ ! -f "$INSTALL_DIR/.env" ]; then
-        print_info "Creating default .env file..."
-        cp "$INSTALL_DIR/.env.example" "$INSTALL_DIR/.env" 2>/dev/null || cat > "$INSTALL_DIR/.env" << 'EOF'
-# Lynkr Configuration
-# See .env.example for all options
+        print_info "Creating .env configuration file..."
 
-# Model Provider (databricks, openai, azure-openai, azure-anthropic, openrouter, ollama)
+        # Try to copy from .env.example (comprehensive configuration)
+        if [ -f "$INSTALL_DIR/.env.example" ]; then
+            cp "$INSTALL_DIR/.env.example" "$INSTALL_DIR/.env"
+            print_success "Created .env from .env.example (all features documented)"
+        else
+            # Fallback: create minimal .env if .env.example doesn't exist
+            cat > "$INSTALL_DIR/.env" << 'EOF'
+# Lynkr Configuration
+# For full options, see: https://github.com/vishalveerareddy123/Lynkr/blob/main/.env.example
+
+# Model Provider (databricks, openai, azure-openai, azure-anthropic, openrouter, ollama, llamacpp)
 MODEL_PROVIDER=ollama
 
 # Server Configuration
@@ -131,13 +138,29 @@ PREFER_OLLAMA=true
 OLLAMA_MODEL=qwen2.5-coder:7b
 OLLAMA_ENDPOINT=http://localhost:11434
 
-# Uncomment and configure your preferred provider:
+# Long-Term Memory System (Titans-Inspired) - Enabled by default
+MEMORY_ENABLED=true
+MEMORY_RETRIEVAL_LIMIT=5
+MEMORY_SURPRISE_THRESHOLD=0.3
+
+# Uncomment and configure your preferred cloud provider:
 # OPENAI_API_KEY=sk-your-key
 # OPENROUTER_API_KEY=your-key
 # DATABRICKS_API_KEY=your-key
 # DATABRICKS_API_BASE=https://your-workspace.databricks.com
 EOF
-        print_success "Created .env file (edit to configure your API keys)"
+            print_success "Created basic .env file"
+        fi
+
+        echo ""
+        print_info "📝 Configuration ready! Key settings:"
+        echo "     • Default provider: Ollama (local, offline)"
+        echo "     • Memory system: Enabled (learns from conversations)"
+        echo "     • Port: 8080"
+        echo ""
+        print_warning "To use cloud providers (Databricks/OpenAI/Azure):"
+        echo "     Edit: ${BLUE}nano $INSTALL_DIR/.env${NC}"
+        echo "     Add your API keys and change MODEL_PROVIDER"
     else
         print_warning ".env file already exists, skipping"
     fi
@@ -180,23 +203,47 @@ print_next_steps() {
     print_success "Lynkr installed successfully!"
     echo "=============================="
     echo ""
-    echo "Next steps:"
+    echo "🚀 Quick Start Guide:"
     echo ""
-    echo "  1. Configure your API keys:"
-    echo "     ${BLUE}nano $INSTALL_DIR/.env${NC}"
+    echo "  ${GREEN}Option A: Use Ollama (Free, Local, Offline)${NC}"
+    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "  1. Install Ollama (if not already installed):"
+    echo "     ${BLUE}lynkr-setup${NC}  ${GREEN}← Automatic Ollama installer${NC}"
     echo ""
     echo "  2. Start Lynkr:"
-    echo "     ${BLUE}cd $INSTALL_DIR && npm start${NC}"
-    echo "     or"
-    echo "     ${BLUE}lynkr${NC} (if in PATH)"
+    echo "     ${BLUE}lynkr${NC}"
     echo ""
-    echo "  3. Configure Claude CLI to use Lynkr:"
+    echo "  3. Configure Claude Code CLI:"
     echo "     ${BLUE}export ANTHROPIC_BASE_URL=http://localhost:8080${NC}"
-    echo ""
-    echo "  4. Run Claude Code:"
     echo "     ${BLUE}claude${NC}"
     echo ""
-    echo "Documentation: https://github.com/vishalveerareddy123/Lynkr"
+    echo "  ${YELLOW}Option B: Use Cloud Providers (Databricks/OpenAI/Azure)${NC}"
+    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "  1. Edit configuration file:"
+    echo "     ${BLUE}nano $INSTALL_DIR/.env${NC}"
+    echo ""
+    echo "     Update these lines:"
+    echo "     ${BLUE}MODEL_PROVIDER=databricks${NC}  ${GREEN}← Change from 'ollama'${NC}"
+    echo "     ${BLUE}DATABRICKS_API_KEY=dapi_xxxxx${NC}  ${GREEN}← Add your key${NC}"
+    echo "     ${BLUE}DATABRICKS_API_BASE=https://your-workspace.databricks.com${NC}"
+    echo ""
+    echo "  2. Start Lynkr:"
+    echo "     ${BLUE}lynkr${NC}"
+    echo ""
+    echo "  3. Configure Claude Code CLI:"
+    echo "     ${BLUE}export ANTHROPIC_BASE_URL=http://localhost:8080${NC}"
+    echo "     ${BLUE}export ANTHROPIC_API_KEY=any-non-empty-value${NC}  ${GREEN}← Placeholder${NC}"
+    echo "     ${BLUE}claude${NC}"
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "💡 ${YELLOW}Tip:${NC} Memory system is enabled by default"
+    echo "   Lynkr remembers preferences and project context across sessions"
+    echo ""
+    echo "📚 Documentation: ${BLUE}https://github.com/vishalveerareddy123/Lynkr${NC}"
+    echo "💬 Discord: ${BLUE}https://discord.gg/qF7DDxrX${NC}"
     echo ""
 }
 

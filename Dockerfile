@@ -4,10 +4,10 @@ FROM node:20-alpine
 # Add OCI labels for better container management
 LABEL org.opencontainers.image.title="Lynkr" \
       org.opencontainers.image.description="Self-hosted Claude Code proxy with multi-provider support and production hardening" \
-      org.opencontainers.image.version="1.0.1" \
+      org.opencontainers.image.version="3.1.0" \
       org.opencontainers.image.vendor="Vishal Veera Reddy" \
       org.opencontainers.image.source="https://github.com/vishalveerareddy123/Lynkr" \
-      org.opencontainers.image.licenses="MIT"
+      org.opencontainers.image.licenses="Apache-2.0"
 
 # Create app directory
 WORKDIR /app
@@ -27,7 +27,10 @@ RUN npm ci --omit=dev
 # Copy source files
 COPY index.js ./
 COPY src ./src
-RUN mkdir -p data
+
+# Create data directories for SQLite databases and skillbooks
+RUN mkdir -p data/skillbooks data/agent-transcripts
+
 COPY docker/start.sh ./start.sh
 RUN chmod +x ./start.sh
 VOLUME ["/app/data"]
@@ -94,6 +97,21 @@ ENV CIRCUIT_BREAKER_FAILURE_THRESHOLD="5" \
     CIRCUIT_BREAKER_TIMEOUT="60000" \
     LOAD_SHEDDING_MEMORY_THRESHOLD="0.85" \
     LOAD_SHEDDING_HEAP_THRESHOLD="0.90"
+
+# Long-Term Memory Configuration (Titans-inspired)
+ENV MEMORY_ENABLED="true" \
+    MEMORY_RETRIEVAL_LIMIT="5" \
+    MEMORY_SURPRISE_THRESHOLD="0.3" \
+    MEMORY_MAX_AGE_DAYS="90" \
+    MEMORY_MAX_COUNT="10000" \
+    MEMORY_INCLUDE_GLOBAL="true" \
+    MEMORY_INJECTION_FORMAT="system" \
+    MEMORY_EXTRACTION_ENABLED="true" \
+    MEMORY_DECAY_ENABLED="true" \
+    MEMORY_DECAY_HALF_LIFE="30" \
+    MEMORY_FORMAT="compact" \
+    MEMORY_DEDUP_ENABLED="true" \
+    MEMORY_DEDUP_LOOKBACK="5"
 
 # Switch to non-root user
 USER nodejs
