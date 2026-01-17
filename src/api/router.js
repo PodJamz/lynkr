@@ -180,17 +180,93 @@ router.post("/v1/messages", rateLimiter, async (req, res, next) => {
         }
       }
 
-      // Fallback: if no stream, wrap buffered response in SSE (old behavior)
-      const eventPayload = {
-        type: "message",
-        message: result.body,
-      };
-      res.write(`event: message\n`);
-      res.write(`data: ${JSON.stringify(eventPayload)}\n\n`);
-      res.write(`event: end\n`);
-      res.write(
-        `data: ${JSON.stringify({ termination: result.terminationReason ?? "completion" })}\n\n`,
-      );
+      // Fallback: if no stream, wrap buffered response in proper Anthropic SSE format
+      // Check if result.body exists
+      if (!result || !result.body) {
+        res.write(`event: error\n`);
+        res.write(`data: ${JSON.stringify({ type: "error", error: { message: "Empty response from provider" } })}\n\n`);
+        res.end();
+        return;
+      }
+
+      const msg = result.body;
+
+      // 1. message_start
+      res.write(`event: message_start\n`);
+      res.write(`data: ${JSON.stringify({
+        type: "message_start",
+        message: {
+          id: msg.id,
+          type: "message",
+          role: "assistant",
+          content: [],
+          model: msg.model,
+          stop_reason: null,
+          stop_sequence: null,
+          usage: { input_tokens: msg.usage?.input_tokens || 0, output_tokens: 1 }
+        }
+      })}\n\n`);
+
+      // 2. content_block_start and content_block_delta for each content block
+      const contentBlocks = msg.content || [];
+      for (let i = 0; i < contentBlocks.length; i++) {
+        const block = contentBlocks[i];
+
+        if (block.type === "text") {
+          res.write(`event: content_block_start\n`);
+          res.write(`data: ${JSON.stringify({
+            type: "content_block_start",
+            index: i,
+            content_block: { type: "text", text: "" }
+          })}\n\n`);
+
+          // Send text in chunks
+          const text = block.text || "";
+          const chunkSize = 20;
+          for (let j = 0; j < text.length; j += chunkSize) {
+            const chunk = text.slice(j, j + chunkSize);
+            res.write(`event: content_block_delta\n`);
+            res.write(`data: ${JSON.stringify({
+              type: "content_block_delta",
+              index: i,
+              delta: { type: "text_delta", text: chunk }
+            })}\n\n`);
+          }
+
+          res.write(`event: content_block_stop\n`);
+          res.write(`data: ${JSON.stringify({ type: "content_block_stop", index: i })}\n\n`);
+        } else if (block.type === "tool_use") {
+          res.write(`event: content_block_start\n`);
+          res.write(`data: ${JSON.stringify({
+            type: "content_block_start",
+            index: i,
+            content_block: { type: "tool_use", id: block.id, name: block.name, input: {} }
+          })}\n\n`);
+
+          res.write(`event: content_block_delta\n`);
+          res.write(`data: ${JSON.stringify({
+            type: "content_block_delta",
+            index: i,
+            delta: { type: "input_json_delta", partial_json: JSON.stringify(block.input) }
+          })}\n\n`);
+
+          res.write(`event: content_block_stop\n`);
+          res.write(`data: ${JSON.stringify({ type: "content_block_stop", index: i })}\n\n`);
+        }
+      }
+
+      // 3. message_delta with stop_reason
+      res.write(`event: message_delta\n`);
+      res.write(`data: ${JSON.stringify({
+        type: "message_delta",
+        delta: { stop_reason: msg.stop_reason || "end_turn", stop_sequence: null },
+        usage: { output_tokens: msg.usage?.output_tokens || 0 }
+      })}\n\n`);
+
+      // 4. message_stop
+      res.write(`event: message_stop\n`);
+      res.write(`data: ${JSON.stringify({ type: "message_stop" })}\n\n`);
+
       metrics.recordResponse(result.status);
       res.end();
       return;
@@ -219,17 +295,91 @@ router.post("/v1/messages", rateLimiter, async (req, res, next) => {
         res.flushHeaders();
       }
 
-      const eventPayload = {
-        type: "message",
-        message: result.body,
-      };
-      res.write(`event: message\n`);
-      res.write(`data: ${JSON.stringify(eventPayload)}\n\n`);
+      // Check if result.body exists
+      if (!result || !result.body) {
+        res.write(`event: error\n`);
+        res.write(`data: ${JSON.stringify({ type: "error", error: { message: "Empty response from provider" } })}\n\n`);
+        res.end();
+        return;
+      }
 
-      res.write(`event: end\n`);
-      res.write(
-        `data: ${JSON.stringify({ termination: result.terminationReason ?? "completion" })}\n\n`,
-      );
+      // Use proper Anthropic SSE format
+      const msg = result.body;
+
+      // 1. message_start
+      res.write(`event: message_start\n`);
+      res.write(`data: ${JSON.stringify({
+        type: "message_start",
+        message: {
+          id: msg.id,
+          type: "message",
+          role: "assistant",
+          content: [],
+          model: msg.model,
+          stop_reason: null,
+          stop_sequence: null,
+          usage: { input_tokens: msg.usage?.input_tokens || 0, output_tokens: 1 }
+        }
+      })}\n\n`);
+
+      // 2. content_block_start and content_block_delta for each content block
+      const contentBlocks = msg.content || [];
+      for (let i = 0; i < contentBlocks.length; i++) {
+        const block = contentBlocks[i];
+
+        if (block.type === "text") {
+          res.write(`event: content_block_start\n`);
+          res.write(`data: ${JSON.stringify({
+            type: "content_block_start",
+            index: i,
+            content_block: { type: "text", text: "" }
+          })}\n\n`);
+
+          const text = block.text || "";
+          const chunkSize = 20;
+          for (let j = 0; j < text.length; j += chunkSize) {
+            const chunk = text.slice(j, j + chunkSize);
+            res.write(`event: content_block_delta\n`);
+            res.write(`data: ${JSON.stringify({
+              type: "content_block_delta",
+              index: i,
+              delta: { type: "text_delta", text: chunk }
+            })}\n\n`);
+          }
+
+          res.write(`event: content_block_stop\n`);
+          res.write(`data: ${JSON.stringify({ type: "content_block_stop", index: i })}\n\n`);
+        } else if (block.type === "tool_use") {
+          res.write(`event: content_block_start\n`);
+          res.write(`data: ${JSON.stringify({
+            type: "content_block_start",
+            index: i,
+            content_block: { type: "tool_use", id: block.id, name: block.name, input: {} }
+          })}\n\n`);
+
+          res.write(`event: content_block_delta\n`);
+          res.write(`data: ${JSON.stringify({
+            type: "content_block_delta",
+            index: i,
+            delta: { type: "input_json_delta", partial_json: JSON.stringify(block.input) }
+          })}\n\n`);
+
+          res.write(`event: content_block_stop\n`);
+          res.write(`data: ${JSON.stringify({ type: "content_block_stop", index: i })}\n\n`);
+        }
+      }
+
+      // 3. message_delta with stop_reason
+      res.write(`event: message_delta\n`);
+      res.write(`data: ${JSON.stringify({
+        type: "message_delta",
+        delta: { stop_reason: msg.stop_reason || "end_turn", stop_sequence: null },
+        usage: { output_tokens: msg.usage?.output_tokens || 0 }
+      })}\n\n`);
+
+      // 4. message_stop
+      res.write(`event: message_stop\n`);
+      res.write(`data: ${JSON.stringify({ type: "message_stop" })}\n\n`);
 
       metrics.recordResponse(result.status);
       res.end();

@@ -264,9 +264,19 @@ function convertOpenRouterResponseToAnthropic(openRouterResponse, requestedModel
             trimmed.includes('"arguments"'));
   };
 
+  // Handle reasoning_content from thinking models (e.g., Kimi, o1)
+  let textContent = message.content || "";
+  if (!textContent.trim() && message.reasoning_content) {
+    logger.info({
+      hasReasoningContent: true,
+      reasoningLength: message.reasoning_content.length
+    }, "Using reasoning_content as primary content (thinking model detected)");
+    textContent = message.reasoning_content;
+  }
+
   // Add text content if present, but skip if it's a duplicate/malformed tool call JSON
-  if (message.content && message.content.trim()) {
-    const looksLikeToolJson = isToolCallJson(message.content);
+  if (textContent && textContent.trim()) {
+    const looksLikeToolJson = isToolCallJson(textContent);
 
     // Skip content in two cases:
     // 1. We have proper tool_calls AND content duplicates them (original fix)
@@ -276,14 +286,14 @@ function convertOpenRouterResponseToAnthropic(openRouterResponse, requestedModel
       if (hasToolCalls) {
         // Case 1: Duplicate - model provided both content and tool_calls
         logger.debug({
-          contentPreview: message.content.substring(0, 100),
+          contentPreview: textContent.substring(0, 100),
           toolCallCount: message.tool_calls.length
         }, "Skipping text content that duplicates tool_calls (llama.cpp quirk)");
       } else {
         // Case 2: Malformed - model only provided JSON in content, not structured tool_calls
         // This is a model error - it should have used tool_calls, not raw JSON
         logger.warn({
-          contentPreview: message.content.substring(0, 200)
+          contentPreview: textContent.substring(0, 200)
         }, "Model output tool call as JSON text instead of structured tool_calls - filtering out malformed output");
       }
       // Skip this content block in both cases
@@ -291,7 +301,7 @@ function convertOpenRouterResponseToAnthropic(openRouterResponse, requestedModel
       // Normal text content - include it
       contentBlocks.push({
         type: "text",
-        text: message.content
+        text: textContent
       });
     }
   }

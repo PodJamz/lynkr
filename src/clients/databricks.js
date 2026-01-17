@@ -225,10 +225,35 @@ async function invokeOllama(body) {
     };
   });
 
+  // FIX: Deduplicate consecutive messages with same role (Ollama may reject this)
+  const deduplicated = [];
+  let lastRole = null;
+  for (const msg of convertedMessages) {
+    if (msg.role === lastRole) {
+      logger.debug({
+        skippedRole: msg.role,
+        contentPreview: msg.content.substring(0, 50)
+      }, 'Ollama: Skipping duplicate consecutive message with same role');
+      continue;
+    }
+    deduplicated.push(msg);
+    lastRole = msg.role;
+  }
+
+  if (deduplicated.length !== convertedMessages.length) {
+    logger.info({
+      originalCount: convertedMessages.length,
+      deduplicatedCount: deduplicated.length,
+      removed: convertedMessages.length - deduplicated.length,
+      messageRoles: convertedMessages.map(m => m.role).join(' → '),
+      deduplicatedRoles: deduplicated.map(m => m.role).join(' → ')
+    }, 'Ollama: Removed consecutive duplicate roles from message sequence');
+  }
+
   const ollamaBody = {
     model: config.ollama.model,
-    messages: convertedMessages,
-    stream: body.stream ?? false,
+    messages: deduplicated,
+    stream: false,  // Force non-streaming for Ollama - streaming format conversion not yet implemented
     options: {
       temperature: body.temperature ?? 0.7,
       num_predict: body.max_tokens ?? 4096,
@@ -240,7 +265,8 @@ async function invokeOllama(body) {
   let toolsToSend = body.tools;
   let toolsInjected = false;
 
-  if (!Array.isArray(toolsToSend) || toolsToSend.length === 0) {
+  const injectToolsOllama = process.env.INJECT_TOOLS_OLLAMA !== "false";
+  if (injectToolsOllama && (!Array.isArray(toolsToSend) || toolsToSend.length === 0)) {
     toolsToSend = STANDARD_TOOLS;
     toolsInjected = true;
     logger.info({
@@ -248,6 +274,8 @@ async function invokeOllama(body) {
       injectedToolNames: STANDARD_TOOLS.map(t => t.name),
       reason: "Client did not send tools (passthrough mode)"
     }, "=== INJECTING STANDARD TOOLS (Ollama) ===");
+  } else if (!injectToolsOllama) {
+    logger.info({}, "Tool injection disabled for Ollama (INJECT_TOOLS_OLLAMA=false)");
   }
 
   // Add tools if present (for tool-capable models)
@@ -351,9 +379,16 @@ async function invokeAzureOpenAI(body) {
   const format = detectAzureFormat(endpoint);
 
   const headers = {
-    "api-key": config.azureOpenAI.apiKey,  // Azure uses "api-key" not "Authorization"
     "Content-Type": "application/json"
   };
+
+  // Azure AI Foundry (services.ai.azure.com) uses Bearer auth
+  // Standard Azure OpenAI (openai.azure.com) uses api-key header
+  if (endpoint.includes("services.ai.azure.com")) {
+    headers["Authorization"] = `Bearer ${config.azureOpenAI.apiKey}`;
+  } else {
+    headers["api-key"] = config.azureOpenAI.apiKey;
+  }
 
   // Convert messages and handle system message
   const messages = convertAnthropicMessagesToOpenRouter(body.messages || []);
@@ -371,7 +406,7 @@ async function invokeAzureOpenAI(body) {
     temperature: body.temperature ?? 0.3,  // Lower temperature for more deterministic, action-oriented behavior
     max_tokens: Math.min(body.max_tokens ?? 4096, 16384),  // Cap at Azure OpenAI's limit
     top_p: body.top_p ?? 1.0,
-    stream: body.stream ?? false,
+    stream: false,  // Force non-streaming for Azure OpenAI - streaming format conversion not yet implemented
     model: config.azureOpenAI.deployment
   };
 
@@ -536,8 +571,35 @@ async function invokeLlamaCpp(body) {
     messages.unshift({ role: "system", content: body.system });
   }
 
+  // FIX: Deduplicate consecutive messages with same role (llama.cpp rejects this)
+  const deduplicated = [];
+  let lastRole = null;
+  for (const msg of messages) {
+    if (msg.role === lastRole) {
+      logger.debug({
+        skippedRole: msg.role,
+        contentPreview: typeof msg.content === 'string'
+          ? msg.content.substring(0, 50)
+          : JSON.stringify(msg.content).substring(0, 50)
+      }, 'llama.cpp: Skipping duplicate consecutive message with same role');
+      continue;
+    }
+    deduplicated.push(msg);
+    lastRole = msg.role;
+  }
+
+  if (deduplicated.length !== messages.length) {
+    logger.info({
+      originalCount: messages.length,
+      deduplicatedCount: deduplicated.length,
+      removed: messages.length - deduplicated.length,
+      messageRoles: messages.map(m => m.role).join(' → '),
+      deduplicatedRoles: deduplicated.map(m => m.role).join(' → ')
+    }, 'llama.cpp: Removed consecutive duplicate roles from message sequence');
+  }
+
   const llamacppBody = {
-    messages,
+    messages: deduplicated,
     temperature: body.temperature ?? 0.7,
     max_tokens: body.max_tokens ?? 4096,
     top_p: body.top_p ?? 1.0,
@@ -548,7 +610,8 @@ async function invokeLlamaCpp(body) {
   let toolsToSend = body.tools;
   let toolsInjected = false;
 
-  if (!Array.isArray(toolsToSend) || toolsToSend.length === 0) {
+  const injectToolsLlamacpp = process.env.INJECT_TOOLS_LLAMACPP !== "false";
+  if (injectToolsLlamacpp && (!Array.isArray(toolsToSend) || toolsToSend.length === 0)) {
     toolsToSend = STANDARD_TOOLS;
     toolsInjected = true;
     logger.info({
@@ -556,6 +619,8 @@ async function invokeLlamaCpp(body) {
       injectedToolNames: STANDARD_TOOLS.map(t => t.name),
       reason: "Client did not send tools (passthrough mode)"
     }, "=== INJECTING STANDARD TOOLS (llama.cpp) ===");
+  } else if (!injectToolsLlamacpp) {
+    logger.info({}, "Tool injection disabled for llama.cpp (INJECT_TOOLS_LLAMACPP=false)");
   }
 
   if (Array.isArray(toolsToSend) && toolsToSend.length > 0) {
@@ -574,6 +639,16 @@ async function invokeLlamaCpp(body) {
     toolCount: llamacppBody.tools?.length || 0,
     temperature: llamacppBody.temperature,
     max_tokens: llamacppBody.max_tokens,
+    messageCount: llamacppBody.messages?.length || 0,
+    messageRoles: llamacppBody.messages?.map(m => m.role).join(' → '),
+    messages: llamacppBody.messages?.map((m, i) => ({
+      index: i,
+      role: m.role,
+      hasContent: !!m.content,
+      contentPreview: typeof m.content === 'string' ? m.content.substring(0, 100) : JSON.stringify(m.content).substring(0, 100),
+      hasToolCalls: !!m.tool_calls,
+      toolCallCount: m.tool_calls?.length || 0,
+    }))
   }, "=== LLAMA.CPP REQUEST ===");
 
   return performJsonRequest(endpoint, { headers, body: llamacppBody }, "llama.cpp");

@@ -12,7 +12,7 @@ const STANDARD_TOOLS = [
       properties: {
         file_path: {
           type: "string",
-          description: "The absolute path to the file to write (must be absolute, not relative)"
+          description: "Relative path within workspace (e.g., 'hello.cpp', 'src/main.py'). DO NOT use absolute paths."
         },
         content: {
           type: "string",
@@ -30,7 +30,7 @@ const STANDARD_TOOLS = [
       properties: {
         file_path: {
           type: "string",
-          description: "The absolute path to the file to read"
+          description: "Relative path within workspace (e.g., 'config.js', 'src/index.ts'). DO NOT use absolute paths."
         },
         limit: {
           type: "number",
@@ -52,7 +52,7 @@ const STANDARD_TOOLS = [
       properties: {
         file_path: {
           type: "string",
-          description: "The absolute path to the file to modify"
+          description: "Relative path within workspace (e.g., 'app.py', 'src/utils.js'). DO NOT use absolute paths."
         },
         old_string: {
           type: "string",
@@ -312,7 +312,7 @@ const STANDARD_TOOLS = [
       properties: {
         notebook_path: {
           type: "string",
-          description: "The absolute path to the Jupyter notebook file to edit"
+          description: "Relative path to the Jupyter notebook within workspace (e.g., 'analysis.ipynb', 'notebooks/data.ipynb'). DO NOT use absolute paths."
         },
         new_source: {
           type: "string",
