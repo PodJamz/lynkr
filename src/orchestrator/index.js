@@ -11,6 +11,7 @@ const systemPrompt = require("../prompts/system");
 const historyCompression = require("../context/compression");
 const tokenBudget = require("../context/budget");
 const { classifyRequestType, selectToolsSmartly } = require("../tools/smart-selection");
+const { compressMessages: headroomCompress, isEnabled: isHeadroomEnabled } = require("../headroom");
 const { createAuditLogger } = require("../logger/audit-logger");
 const { getResolvedIp, runWithDnsContext } = require("../clients/dns-logger");
 const { getShuttingDown } = require("../api/health");
@@ -1222,10 +1223,13 @@ async function runAgentLoop({
   requestedModel,
   wantsThinking,
   session,
+  cwd,
   options,
   cacheKey,
   providerType,
 }) {
+  console.log('[DEBUG] runAgentLoop ENTERED - providerType:', providerType, 'messages:', cleanPayload.messages?.length);
+  logger.info({ providerType, messageCount: cleanPayload.messages?.length }, 'runAgentLoop ENTERED');
   const settings = resolveLoopOptions(options);
   // Initialize audit logger (no-op if disabled)
   const auditLogger = createAuditLogger(config.audit);
@@ -1272,6 +1276,7 @@ async function runAgentLoop({
     }
 
     steps += 1;
+    console.log('[LOOP DEBUG] Entered while loop - step:', steps);
     logger.debug(
       {
         sessionId: session?.id ?? null,
@@ -1426,6 +1431,25 @@ async function runAgentLoop({
       }
     }
 
+    // Inject agent delegation instructions when Task tool is available (for all models)
+    if (steps === 1 && config.agents?.enabled !== false) {
+      try {
+        const injectedSystem = systemPrompt.injectAgentInstructions(
+          cleanPayload.system || '',
+          cleanPayload.tools
+        );
+        if (injectedSystem !== cleanPayload.system) {
+          cleanPayload.system = injectedSystem;
+          logger.debug({
+            sessionId: session?.id ?? null,
+            hasTaskTool: true
+          }, 'Agent delegation instructions injected into system prompt');
+        }
+      } catch (err) {
+        logger.warn({ err, sessionId: session?.id }, 'Agent instructions injection failed, continuing without');
+      }
+    }
+
     if (steps === 1 && config.tokenBudget?.enforcement !== false) {
       try {
         const budgetCheck = tokenBudget.checkBudget(cleanPayload);
@@ -1467,6 +1491,7 @@ async function runAgentLoop({
     }
 
     // Track estimated token usage before model call
+  console.log('[TOKEN DEBUG] About to track token usage - step:', steps);
   const estimatedTokens = config.tokenTracking?.enabled !== false
     ? tokens.countPayloadTokens(cleanPayload)
     : null;
@@ -1479,6 +1504,50 @@ async function runAgentLoop({
     }, 'Estimated token usage before model call');
   }
 
+  // Apply Headroom compression if enabled
+  console.log('[HEADROOM DEBUG] About to check compression - step:', steps, 'messages:', cleanPayload.messages?.length);
+  logger.info({
+    headroomEnabled: isHeadroomEnabled(),
+    hasMessages: Boolean(cleanPayload.messages),
+    messageCount: cleanPayload.messages?.length ?? 0,
+  }, 'Headroom compression check');
+
+  if (isHeadroomEnabled() && cleanPayload.messages && cleanPayload.messages.length > 0) {
+    console.log('[HEADROOM DEBUG] Entering compression block');
+    try {
+      console.log('[HEADROOM DEBUG] About to call headroomCompress');
+      const compressionResult = await headroomCompress(
+        cleanPayload.messages,
+        cleanPayload.tools || [],
+        {
+          mode: config.headroom?.mode,
+          queryContext: cleanPayload.messages[cleanPayload.messages.length - 1]?.content,
+        }
+      );
+      console.log('[HEADROOM DEBUG] headroomCompress returned - compressed:', compressionResult.compressed, 'stats:', JSON.stringify(compressionResult.stats));
+
+      if (compressionResult.compressed) {
+        cleanPayload.messages = compressionResult.messages;
+        if (compressionResult.tools) {
+          cleanPayload.tools = compressionResult.tools;
+        }
+        logger.info({
+          sessionId: session?.id ?? null,
+          tokensBefore: compressionResult.stats?.tokens_before,
+          tokensAfter: compressionResult.stats?.tokens_after,
+          saved: compressionResult.stats?.tokens_saved,
+          savingsPercent: compressionResult.stats?.savings_percent,
+          transforms: compressionResult.stats?.transforms_applied,
+        }, 'Headroom compression applied to request');
+      } else {
+        logger.debug({
+          sessionId: session?.id ?? null,
+          reason: compressionResult.stats?.reason,
+        }, 'Headroom compression skipped');
+      }
+    } catch (headroomErr) {
+      logger.warn({ err: headroomErr, sessionId: session?.id ?? null }, 'Headroom compression failed, using original messages');
+    }
   // Generate correlation ID for request/response pairing
   const correlationId = `req_${Date.now()}_${crypto.randomBytes(8).toString('hex')}`;
 
@@ -1637,7 +1706,12 @@ async function runAgentLoop({
     let message = {};
     let toolCalls = [];
 
-    if (providerType === "azure-anthropic") {
+    // Detect Anthropic format: has 'content' array and 'stop_reason' at top level (no 'choices')
+    // This handles azure-anthropic provider AND azure-openai Responses API (which we convert to Anthropic format)
+    const isAnthropicFormat = providerType === "azure-anthropic" ||
+      (Array.isArray(databricksResponse.json?.content) && databricksResponse.json?.stop_reason !== undefined && !databricksResponse.json?.choices);
+
+    if (isAnthropicFormat) {
       // Anthropic format: { content: [{ type: "tool_use", ... }], stop_reason: "tool_use" }
       message = {
         content: databricksResponse.json?.content ?? [],
@@ -1926,6 +2000,7 @@ async function runAgentLoop({
           const taskExecutions = await Promise.all(
             taskCalls.map(({ call }) => executeToolCall(call, {
               session,
+              cwd,
               requestMessages: cleanPayload.messages,
             }))
           );
@@ -2158,6 +2233,7 @@ async function runAgentLoop({
 
         const execution = await executeToolCall(call, {
           session,
+          cwd,
           requestMessages: cleanPayload.messages,
         });
 
@@ -2775,6 +2851,7 @@ async function runAgentLoop({
 
           const execution = await executeToolCall(attemptCall, {
             session,
+            cwd,
             requestMessages: cleanPayload.messages,
           });
 
@@ -2983,8 +3060,9 @@ async function runAgentLoop({
     terminationReason: "max_steps",
   };
 }
+}
 
-async function processMessage({ payload, headers, session, options = {} }) {
+async function processMessage({ payload, headers, session, cwd, options = {} }) {
   const requestedModel =
     payload?.model ??
     config.modelProvider?.defaultModel ??
@@ -3061,6 +3139,7 @@ async function processMessage({ payload, headers, session, options = {} }) {
     requestedModel,
     wantsThinking,
     session,
+    cwd,
     options,
     cacheKey,
     providerType: config.modelProvider?.type ?? "databricks",
