@@ -48,7 +48,18 @@
       "Bash(node --check:*)",
       "Bash(node index.js:*)",
       "Bash(tee:*)",
-      "Bash(gh pr checks:*)"
+      "Bash(gh pr checks:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push)",
+      "WebFetch(domain:liquidos.ai)",
+      "mcp__shadcn__getComponents",
+      "mcp__shadcn__getComponent",
+      "Bash(claude mcp add:*)",
+      "Bash(claude mcp remove:*)",
+      "Bash(claude mcp add-json:*)",
+      "WebFetch(domain:ui.shadcn.com)",
+      "WebFetch(domain:en.wikipedia.org)"
     ],
     "deny": [],
     "ask": []
