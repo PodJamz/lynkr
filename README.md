@@ -156,9 +156,30 @@ export  OPENAI_API_KEY=dummy
   [model_providers.lynkr]                                                                                                                                                                                                                            
   name = "Lynkr Proxy"                                                                                                                                                                                                                               
   base_url = "http://localhost:8081/v1"                                                                                                                                                                                                              
-  env_key = "OPENAI_API_KEY"     
+  env_key = "OPENAI_API_KEY"
   ```
-                                                          
+
+---
+
+## ClawdBot Integration
+
+Lynkr supports [ClawdBot](https://github.com/openclaw/openclaw) via its OpenAI-compatible API. ClawdBot users can route requests through Lynkr to access any supported provider.
+
+**Configuration in ClawdBot:**
+| Setting | Value |
+|---------|-------|
+| Model/auth provider | `Copilot` |
+| Copilot auth method | `Copilot Proxy (local)` |
+| Copilot Proxy base URL | `http://localhost:8081/v1` |
+| Model IDs | Any model your Lynkr provider supports |
+
+**Available models** (depending on your Lynkr provider):
+`gpt-5.2`, `gpt-5.1-codex`, `claude-opus-4.5`, `claude-sonnet-4.5`, `claude-haiku-4.5`, `gemini-3-pro`, `gemini-3-flash`, and more.
+
+> 🌐 **Remote Support**: ClawdBot can connect to Lynkr on any machine - use any IP/hostname in the Proxy base URL (e.g., `http://192.168.1.100:8081/v1` or `http://gpu-server:8081/v1`).
+
+---
+
 ## Lynkr also supports  Cline, Continue.dev and other OpenAI compatible tools.
 ---
 
