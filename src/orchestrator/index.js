@@ -3145,7 +3145,6 @@ async function runAgentLoop({
     terminationReason: "max_steps",
   };
 }
-}
 
 async function processMessage({ payload, headers, session, cwd, options = {} }) {
   const requestedModel =
