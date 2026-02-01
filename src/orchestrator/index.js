@@ -1631,6 +1631,8 @@ async function runAgentLoop({
     } catch (headroomErr) {
       logger.warn({ err: headroomErr, sessionId: session?.id ?? null }, 'Headroom compression failed, using original messages');
     }
+  }
+
   // Generate correlation ID for request/response pairing
   const correlationId = `req_${Date.now()}_${crypto.randomBytes(8).toString('hex')}`;
 
