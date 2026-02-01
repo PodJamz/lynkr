@@ -589,15 +589,42 @@ function normaliseToolChoice(choice) {
  * - Lines starting with bullet points (●, •, -, *)
  * - Explanatory reasoning before the actual response
  * - Multiple newlines used to separate thinking from response
+ *
+ * IMPORTANT: This function is conservative - if we can't cleanly separate
+ * thinking from response, we return the original text rather than losing content.
  */
 function stripThinkingBlocks(text) {
   if (typeof text !== "string") return text;
 
-  // Split into lines
+  // Check for explicit thinking/response markers used by some models (e.g., gpt-oss)
+  // Format: <thinking>...</thinking> or similar XML-like tags
+  const thinkingTagMatch = text.match(/<thinking>([\s\S]*?)<\/thinking>\s*([\s\S]*)/i);
+  if (thinkingTagMatch) {
+    const response = thinkingTagMatch[2]?.trim();
+    logger.debug({
+      hadThinkingTags: true,
+      responseLength: response?.length || 0
+    }, 'stripThinkingBlocks: Found <thinking> tags');
+    return response || text; // Return original if no response after tags
+  }
+
+  // Check for [thinking] ... [/thinking] format
+  const bracketMatch = text.match(/\[thinking\]([\s\S]*?)\[\/thinking\]\s*([\s\S]*)/i);
+  if (bracketMatch) {
+    const response = bracketMatch[2]?.trim();
+    logger.debug({
+      hadBracketTags: true,
+      responseLength: response?.length || 0
+    }, 'stripThinkingBlocks: Found [thinking] tags');
+    return response || text;
+  }
+
+  // Split into lines for bullet-point based detection
   const lines = text.split("\n");
   const cleanedLines = [];
   let inThinkingBlock = false;
   let consecutiveEmptyLines = 0;
+  let bulletLineCount = 0;
 
   for (const line of lines) {
     const trimmed = line.trim();
@@ -605,14 +632,15 @@ function stripThinkingBlocks(text) {
     // Detect thinking block markers (bullet points followed by reasoning)
     if (/^[●•\-\*]\s/.test(trimmed)) {
       inThinkingBlock = true;
+      bulletLineCount++;
       continue;
     }
 
     // Empty lines might separate thinking from response
     if (trimmed === "") {
       consecutiveEmptyLines++;
-      // If we've seen 2+ empty lines, likely end of thinking block
-      if (consecutiveEmptyLines >= 2) {
+      // If we've seen 1+ empty lines after bullets, likely end of thinking block
+      if (consecutiveEmptyLines >= 1 && bulletLineCount > 0) {
         inThinkingBlock = false;
       }
       continue;
@@ -620,6 +648,12 @@ function stripThinkingBlocks(text) {
 
     // Reset empty line counter
     consecutiveEmptyLines = 0;
+
+    // If line doesn't start with a bullet and has content, it's likely the response
+    // Exit thinking block for substantial content lines (more than 10 chars or starts with letter/quote)
+    if (inThinkingBlock && trimmed.length > 10 && /^[a-zA-Z"']/.test(trimmed)) {
+      inThinkingBlock = false;
+    }
 
     // Skip lines that are part of thinking block
     if (inThinkingBlock) {
@@ -630,7 +664,26 @@ function stripThinkingBlocks(text) {
     cleanedLines.push(line);
   }
 
-  return cleanedLines.join("\n").trim();
+  const result = cleanedLines.join("\n").trim();
+
+  // SAFETY: If we stripped everything, return the original text
+  // This prevents empty responses due to aggressive stripping
+  if (!result && text.trim()) {
+    logger.warn({
+      originalLength: text.length,
+      bulletLineCount
+    }, 'stripThinkingBlocks: Would have returned empty, keeping original');
+    return text.trim();
+  }
+
+  logger.debug({
+    originalLength: text.length,
+    resultLength: result.length,
+    bulletLineCount,
+    linesKept: cleanedLines.length
+  }, 'stripThinkingBlocks: Processed text');
+
+  return result;
 }
 
 function ollamaToAnthropicResponse(ollamaResponse, requestedModel) {
@@ -642,12 +695,28 @@ function ollamaToAnthropicResponse(ollamaResponse, requestedModel) {
   const rawContent = message.content || "";
   const toolCalls = message.tool_calls || [];
 
+  // Debug: Log raw Ollama response
+  logger.info({
+    hasMessage: !!ollamaResponse?.message,
+    rawContentLength: rawContent.length,
+    rawContentPreview: rawContent.substring(0, 200),
+    toolCallCount: toolCalls.length,
+    done: ollamaResponse?.done,
+    model: ollamaResponse?.model
+  }, '=== OLLAMA RAW RESPONSE ===');
+
   // Build content blocks
   const contentItems = [];
 
   // Add text content if present, after stripping thinking blocks
   if (typeof rawContent === "string" && rawContent.trim()) {
     const cleanedContent = stripThinkingBlocks(rawContent);
+    logger.debug({
+      rawLength: rawContent.length,
+      cleanedLength: cleanedContent?.length || 0,
+      cleanedPreview: cleanedContent?.substring(0, 100)
+    }, 'ollamaToAnthropicResponse: After stripThinkingBlocks');
+
     if (cleanedContent) {
       contentItems.push({ type: "text", text: cleanedContent });
     }
@@ -657,10 +726,15 @@ function ollamaToAnthropicResponse(ollamaResponse, requestedModel) {
   if (Array.isArray(toolCalls) && toolCalls.length > 0) {
     const { buildAnthropicResponseFromOllama } = require("../clients/ollama-utils");
     // Use the utility function for tool call conversion
+    logger.debug({ toolCallCount: toolCalls.length }, 'ollamaToAnthropicResponse: Has tool calls, using buildAnthropicResponseFromOllama');
     return buildAnthropicResponseFromOllama(ollamaResponse, requestedModel);
   }
 
   if (contentItems.length === 0) {
+    logger.warn({
+      rawContentLength: rawContent.length,
+      rawContentPreview: rawContent.substring(0, 200)
+    }, 'ollamaToAnthropicResponse: No content items, adding empty text block');
     contentItems.push({ type: "text", text: "" });
   }
 
@@ -668,7 +742,7 @@ function ollamaToAnthropicResponse(ollamaResponse, requestedModel) {
   const inputTokens = ollamaResponse.prompt_eval_count ?? 0;
   const outputTokens = ollamaResponse.eval_count ?? 0;
 
-  return {
+  const result = {
     id: `msg_${Date.now()}`,
     type: "message",
     role: "assistant",
@@ -683,6 +757,15 @@ function ollamaToAnthropicResponse(ollamaResponse, requestedModel) {
       cache_read_input_tokens: 0,
     },
   };
+
+  logger.info({
+    contentBlockCount: contentItems.length,
+    contentTypes: contentItems.map(c => c.type),
+    stopReason: result.stop_reason,
+    hasContent: contentItems.some(c => c.type === 'text' && c.text?.length > 0)
+  }, '=== OLLAMA TO ANTHROPIC CONVERSION COMPLETE ===');
+
+  return result;
 }
 
 function toAnthropicResponse(openai, requestedModel, wantsThinking) {
