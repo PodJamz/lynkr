@@ -526,7 +526,47 @@ lynkr_cache_hits_total / (lynkr_cache_hits_total + lynkr_cache_misses_total)
 
 ## Best Practices
 
-### 1. Use Reverse Proxy
+### 1. Use Cloudflare Tunnel (Recommended)
+
+Cloudflare Tunnel provides secure, zero-config HTTPS exposure without opening ports or managing certificates.
+
+**Setup:**
+```bash
+# Install cloudflared
+brew install cloudflared
+
+# Login to Cloudflare
+cloudflared tunnel login
+
+# Create tunnel via Cloudflare Zero Trust Dashboard:
+# 1. Go to Zero Trust → Networks → Connectors
+# 2. Create tunnel (e.g., "lynkr")
+# 3. Copy the install command with token
+
+# Install as macOS service (one line - keep token intact!)
+sudo cloudflared service install eyJhIjoiYWNjb3VudC1pZCIsInQiOiJ0dW5uZWwtaWQiLCJzIjoic2VjcmV0In0=
+```
+
+**Add Public Hostnames (in Cloudflare Dashboard):**
+- Go to Zero Trust → Networks → Connectors → your tunnel
+- Add public hostname route:
+  - Subdomain: `api` | Domain: `yourdomain.com`
+  - Service Type: `HTTP` | URL: `localhost:8081`
+
+**Result:**
+- `https://api.yourdomain.com` → Lynkr on localhost:8081
+- Automatic HTTPS certificates
+- DDoS protection included
+- No port forwarding needed
+
+**Verify:**
+```bash
+curl https://api.yourdomain.com/health/live
+```
+
+### 1b. Alternative: Nginx Reverse Proxy
+
+If not using Cloudflare Tunnel:
 
 ```nginx
 server {
