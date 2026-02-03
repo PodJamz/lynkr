@@ -1,4 +1,5 @@
 const express = require("express");
+const logger = require("../logger");
 const { processMessage } = require("../orchestrator");
 const { getSession } = require("../sessions");
 const metrics = require("../metrics");

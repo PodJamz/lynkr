@@ -35,7 +35,8 @@ const router = express.Router();
  */
 router.post("/chat/completions", async (req, res) => {
   const startTime = Date.now();
-  const sessionId = req.headers["x-session-id"] || req.headers["authorization"]?.split(" ")[1] || "openai-session";
+  // Use dedicated session header only - never extract from authorization to avoid credential exposure
+  const sessionId = req.headers["x-session-id"] || "openai-session";
 
   try {
     logger.info({
@@ -47,9 +48,8 @@ router.post("/chat/completions", async (req, res) => {
       toolCount: req.body.tools?.length || 0,
       hasMessages: !!req.body.messages,
       messagesType: typeof req.body.messages,
-      requestBodyKeys: Object.keys(req.body),
-      // Log first 500 chars of body for debugging
-      requestBodyPreview: JSON.stringify(req.body).substring(0, 500)
+      requestBodyKeys: Object.keys(req.body)
+      // Note: Request body preview removed to prevent potential secret leakage
     }, "=== OPENAI CHAT COMPLETION REQUEST ===");
 
     // Convert OpenAI request to Anthropic format

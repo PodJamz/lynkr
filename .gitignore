@@ -3,6 +3,12 @@ data/
 *.db
 logs/
 npm-debug.log
+
+# Backup files
+*.bak
+*.backup
+*.old
+*-backup
 SUBAGENT_IMPLEMENTATION_PLAN_V2.md
 .DS_Store
 test-subagents.sh
