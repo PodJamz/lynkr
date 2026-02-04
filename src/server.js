@@ -29,6 +29,7 @@ const { registerMcpTools } = require("./tools/mcp");
 const { registerAgentTaskTool } = require("./tools/agent-task");
 const { initConfigWatcher, getConfigWatcher } = require("./config/watcher");
 const { initializeHeadroom, shutdownHeadroom, getHeadroomManager } = require("./headroom");
+const { remoteAccessAuth } = require("./api/middleware/remote-access-auth");
 
 initialiseMcp();
 registerStubTools();
@@ -79,6 +80,10 @@ function createApp() {
   if (config.budget?.enabled !== false) {
     app.use('/v1/messages', budgetMiddleware);
   }
+
+  // Remote access authentication (for AI James / Cloudflare Tunnel)
+  // Applied to /v1 routes - local requests bypass, remote requires API key
+  app.use('/v1', remoteAccessAuth);
 
   // Health check endpoints
   app.get("/health/live", livenessCheck);

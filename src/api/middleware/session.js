@@ -47,6 +47,22 @@ function sessionMiddleware(req, res, next) {
 
     const session = getOrCreateSession(sessionId);
     req.session = session;
+
+    // Support session naming via header (for AI James remote sessions)
+    const sessionName = req.headers["x-session-name"];
+    if (sessionName) {
+      req.sessionMetadata = {
+        name: sessionName,
+        source: req.headers["x-session-source"] || "remote",
+      };
+      // Store metadata on session for tracking
+      if (!session.metadata) {
+        session.metadata = {};
+      }
+      session.metadata.name = sessionName;
+      session.metadata.source = req.sessionMetadata.source;
+    }
+
     return next();
   } catch (err) {
     return next(err);

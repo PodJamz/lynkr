@@ -513,6 +513,12 @@ const oversizedErrorLogDir =
 	process.env.OVERSIZED_ERROR_LOG_DIR ?? path.join(process.cwd(), "logs", "oversized-errors");
 const oversizedErrorMaxFiles = Number.parseInt(process.env.OVERSIZED_ERROR_MAX_FILES ?? "100", 10);
 
+// Remote Access Configuration (for AI James / Cloudflare Tunnel)
+const remoteAccessEnabled = process.env.REMOTE_ACCESS_ENABLED === "true";
+const remoteAccessApiKey = process.env.REMOTE_ACCESS_API_KEY?.trim() || null;
+const remoteAccessAllowedDirs = parseList(process.env.REMOTE_ACCESS_ALLOWED_DIRS ?? "");
+const remoteAccessTrustedProxies = parseList(process.env.REMOTE_ACCESS_TRUSTED_PROXIES ?? "127.0.0.1,::1");
+
 var config = {
   env: process.env.NODE_ENV ?? "development",
   port: Number.isNaN(port) ? 8080 : port,
@@ -828,6 +834,12 @@ var config = {
     threshold: oversizedErrorThreshold,
     logDir: oversizedErrorLogDir,
     maxFiles: oversizedErrorMaxFiles,
+  },
+  remoteAccess: {
+    enabled: remoteAccessEnabled,
+    apiKey: remoteAccessApiKey,
+    allowedDirectories: remoteAccessAllowedDirs,
+    trustedProxies: remoteAccessTrustedProxies,
   },
 };
 
