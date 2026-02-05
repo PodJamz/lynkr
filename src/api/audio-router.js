@@ -79,7 +79,7 @@ async function pollAceStepResult(taskId) {
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ task_id: taskId }),
+    body: JSON.stringify({ task_id_list: [taskId] }),
     signal: AbortSignal.timeout(5000), // 5s timeout for polling
   });
 
@@ -99,7 +99,27 @@ async function pollAceStepResult(taskId) {
     return null; // Still processing
   }
 
-  return result.data[0]; // Return first result
+  // ACE-Step returns { task_id, result (JSON string), status }
+  const taskResult = result.data[0];
+
+  // Parse the nested result JSON string
+  if (taskResult.result && typeof taskResult.result === 'string') {
+    try {
+      const parsedResult = JSON.parse(taskResult.result);
+      // Return first audio result with task info
+      if (Array.isArray(parsedResult) && parsedResult.length > 0) {
+        return {
+          task_id: taskResult.task_id,
+          status: taskResult.status,
+          ...parsedResult[0], // First audio result
+        };
+      }
+    } catch (e) {
+      logger.error({ error: e.message }, "Failed to parse ACE-Step result JSON");
+    }
+  }
+
+  return taskResult;
 }
 
 /**
@@ -110,27 +130,38 @@ function formatAudioResponse(aceStepResult, taskId) {
     return null;
   }
 
-  // ACE-Step returns: { task_id, status, audio_path, duration, metadata: { bpm, key, time_signature } }
-  const audioPath = aceStepResult.audio_path;
   const baseUrl = config.acestep.endpoint;
-  
-  // Construct audio URL (ACE-Step serves audio via /v1/audio?path=...)
-  const audioUrl = audioPath 
-    ? `${baseUrl}/v1/audio?path=${encodeURIComponent(audioPath)}`
-    : null;
+
+  // ACE-Step returns: { file, status (1=completed), metas: { bpm, duration, keyscale, timesignature } }
+  // Or legacy format: { audio_path, status, metadata }
+  const audioPath = aceStepResult.file || aceStepResult.audio_path;
+  const metas = aceStepResult.metas || aceStepResult.metadata || {};
+
+  // Construct audio URL - ACE-Step file paths are already URL format
+  let audioUrl = null;
+  if (audioPath) {
+    // If it's already a full path with /v1/audio, use it directly
+    audioUrl = audioPath.startsWith('/v1/audio')
+      ? `${baseUrl}${audioPath}`
+      : `${baseUrl}/v1/audio?path=${encodeURIComponent(audioPath)}`;
+  }
+
+  // Status: ACE-Step uses 1 for completed
+  const isCompleted = aceStepResult.status === 1 || aceStepResult.status === "completed";
 
   return {
     id: taskId,
-    status: aceStepResult.status === "completed" ? "completed" : "processing",
+    status: isCompleted ? "completed" : "processing",
     audio_url: audioUrl,
-    audio_base64: null, // Not provided by ACE-Step
-    duration: aceStepResult.duration || 30,
+    audioUrl: audioUrl, // Alias for compatibility
+    audio_base64: null,
+    duration: metas.duration || aceStepResult.duration || 30,
     metadata: {
-      bpm: aceStepResult.metadata?.bpm || 120,
-      key: aceStepResult.metadata?.key || "C major",
-      time_signature: aceStepResult.metadata?.time_signature || "4/4",
-      model: "acestep-v15-turbo",
-      lm_model: "acestep-5Hz-lm-1.7B",
+      bpm: metas.bpm || 120,
+      key: metas.keyscale || metas.key || "C major",
+      time_signature: metas.timesignature || metas.time_signature || "4/4",
+      model: aceStepResult.dit_model || "acestep-v15-turbo",
+      lm_model: aceStepResult.lm_model || "acestep-5Hz-lm-1.7B",
     },
     provider: "local-acestep",
   };
