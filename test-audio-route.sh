@@ -53,8 +53,19 @@ echo ""
 
 # Test 4: Test SSE stream (first few messages)
 echo "4. Testing SSE stream (first 3 messages, 6 seconds)..."
-timeout 6 curl -s -N "${BASE_URL}/v1/audio/generate/${TASK_ID}/stream" \
-  -H "Authorization: Bearer ${API_KEY}" | head -3 || echo "Stream ended or timeout"
+# macOS-compatible timeout: use gtimeout if available, otherwise use background process with sleep
+if command -v gtimeout &> /dev/null; then
+  gtimeout 6 curl -s -N "${BASE_URL}/v1/audio/generate/${TASK_ID}/stream" \
+    -H "Authorization: Bearer ${API_KEY}" | head -3 || echo "Stream ended or timeout"
+else
+  # Fallback: start curl in background, kill after 6 seconds
+  (curl -s -N "${BASE_URL}/v1/audio/generate/${TASK_ID}/stream" \
+    -H "Authorization: Bearer ${API_KEY}" | head -3) &
+  CURL_PID=$!
+  sleep 6
+  kill $CURL_PID 2>/dev/null || true
+  wait $CURL_PID 2>/dev/null || true
+fi
 echo ""
 
 echo "✨ Tests complete!"
