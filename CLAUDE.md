@@ -168,3 +168,47 @@ npm start
 - **Remote Access Auth**: Added authenticated remote access for AI agents via Cloudflare Tunnel (Feb 2026)
 - **Security Hardening**: OpenClaw-inspired timing-safe auth, loopback detection
 - **Session Naming**: Support for named sessions via headers
+
+## Integration with AI James OS (Feb 2026)
+
+Lynkr is integrated with AI James OS (`jamesspalding.org`) for local model access from anywhere.
+
+### Fixed Cloudflare Tunnel URL
+- **Public URL:** `https://api.jamesspalding.org`
+- **Local Port:** `8081`
+- **Configuration:** Fixed custom hostname in Cloudflare Zero Trust (not temporary `trycloudflare.com`)
+
+### API Key Configuration
+- **Settings UI:** API key generated and saved in `/settings/ai` (min 32 chars)
+- **Lynkr `.env`:** Must match settings UI key as `REMOTE_ACCESS_API_KEY`
+- **File:** `/Users/jamesspalding/lynkr/.env` (line 468)
+
+### Starting Lynkr
+```bash
+# From /Users/jamesspalding/lynkr directory:
+cd /Users/jamesspalding/lynkr
+
+# Option 1: Direct start (faster, skips Docker)
+node index.js
+
+# Option 2: With npm (includes Docker prestart)
+npm start
+
+# Option 3: With environment variables
+ACESTEP_ENABLED=true ACESTEP_ENDPOINT=http://localhost:8001 node index.js
+```
+
+### Health Check
+```bash
+# Local health check
+curl http://localhost:8081/health
+
+# Via tunnel
+curl https://api.jamesspalding.org/health
+```
+
+### Documentation
+See `docs/infrastructure/` in AI James OS repo:
+- `LYNKR-API-KEY-SETUP.md` - API key configuration guide
+- `LYNKR-UI-FIX.md` - UI race condition fix details
+- `CLOUDFLARE-TUNNEL-URLS.md` - Tunnel URLs reference
