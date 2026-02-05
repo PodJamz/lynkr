@@ -519,6 +519,10 @@ const remoteAccessApiKey = process.env.REMOTE_ACCESS_API_KEY?.trim() || null;
 const remoteAccessAllowedDirs = parseList(process.env.REMOTE_ACCESS_ALLOWED_DIRS ?? "");
 const remoteAccessTrustedProxies = parseList(process.env.REMOTE_ACCESS_TRUSTED_PROXIES ?? "127.0.0.1,::1");
 
+// ACE-Step Configuration (for local music generation)
+const acestepEnabled = process.env.ACESTEP_ENABLED === "true";
+const acestepEndpoint = process.env.ACESTEP_ENDPOINT?.trim() || "http://localhost:8001";
+
 var config = {
   env: process.env.NODE_ENV ?? "development",
   port: Number.isNaN(port) ? 8080 : port,
@@ -840,6 +844,10 @@ var config = {
     apiKey: remoteAccessApiKey,
     allowedDirectories: remoteAccessAllowedDirs,
     trustedProxies: remoteAccessTrustedProxies,
+  },
+  acestep: {
+    enabled: acestepEnabled,
+    endpoint: acestepEndpoint,
   },
 };
 

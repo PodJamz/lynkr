@@ -595,6 +595,10 @@ router.get("/api/tokens/stats", (req, res) => {
   }
 });
 
+// Mount audio generation endpoints (ACE-Step)
+const audioRouter = require("./audio-router");
+router.use("/v1/audio", audioRouter);
+
 // Mount OpenAI-compatible endpoints for Cursor IDE support
 router.use("/v1", openaiRouter);
 

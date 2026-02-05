@@ -92,6 +92,24 @@ async function readinessCheck(req, res) {
     }
   }
 
+  // Check ACE-Step (if enabled)
+  if (config.acestep?.enabled) {
+    try {
+      checks.acestep = await checkAceStep();
+      // Don't fail overall health if ACE-Step is unavailable
+      // It's a non-critical service - music generation will be unavailable
+      if (!checks.acestep.healthy) {
+        checks.acestep.note = "Music generation will be unavailable";
+      }
+    } catch (err) {
+      checks.acestep = {
+        healthy: false,
+        error: err.message,
+        note: "Music generation will be unavailable",
+      };
+    }
+  }
+
   // Optional: Check provider (can be slow)
   if (req.query.deep === "true") {
     const provider = config.modelProvider?.type || "databricks";
@@ -246,6 +264,49 @@ function checkMemory() {
     heapUsedPercent: Math.round(heapUsedPercent),
     lastCheck: Date.now(),
   };
+}
+
+/**
+ * Check ACE-Step API connectivity
+ */
+async function checkAceStep() {
+  try {
+    if (!config.acestep?.endpoint) {
+      return { healthy: true, note: "No ACE-Step endpoint configured" };
+    }
+
+    const endpoint = `${config.acestep.endpoint}/health`;
+    const response = await fetch(endpoint, {
+      method: "GET",
+      signal: AbortSignal.timeout(5000),
+    });
+
+    if (!response.ok) {
+      return {
+        healthy: false,
+        error: `ACE-Step returned status ${response.status}`,
+        lastCheck: Date.now(),
+      };
+    }
+
+    const data = await response.json();
+    const isHealthy = data.data?.status === "ok" || data.code === 200;
+
+    return {
+      healthy: isHealthy,
+      status: data.data?.status || "unknown",
+      service: data.data?.service || "ACE-Step API",
+      version: data.data?.version || "unknown",
+      lastCheck: Date.now(),
+    };
+  } catch (err) {
+    logger.error({ err }, "ACE-Step health check failed");
+    return {
+      healthy: false,
+      error: err.message,
+      lastCheck: Date.now(),
+    };
+  }
 }
 
 /**
