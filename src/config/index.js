@@ -523,6 +523,10 @@ const remoteAccessTrustedProxies = parseList(process.env.REMOTE_ACCESS_TRUSTED_P
 const acestepEnabled = process.env.ACESTEP_ENABLED === "true";
 const acestepEndpoint = process.env.ACESTEP_ENDPOINT?.trim() || "http://localhost:8001";
 
+// Beat Analyzer Configuration (for beat detection / episode production)
+const beatAnalyzerEnabled = process.env.BEAT_ANALYZER_ENABLED === "true";
+const beatAnalyzerEndpoint = process.env.BEAT_ANALYZER_ENDPOINT?.trim() || "http://localhost:8003";
+
 var config = {
   env: process.env.NODE_ENV ?? "development",
   port: Number.isNaN(port) ? 8080 : port,
@@ -848,6 +852,10 @@ var config = {
   acestep: {
     enabled: acestepEnabled,
     endpoint: acestepEndpoint,
+  },
+  beatAnalyzer: {
+    enabled: beatAnalyzerEnabled,
+    endpoint: beatAnalyzerEndpoint,
   },
 };
 
