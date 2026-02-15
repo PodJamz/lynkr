@@ -687,60 +687,93 @@ function stripThinkingBlocks(text) {
 }
 
 function ollamaToAnthropicResponse(ollamaResponse, requestedModel) {
-  // Ollama response format:
-  // { model, created_at, message: { role, content, tool_calls }, done, total_duration, ... }
-  // { eval_count, prompt_eval_count, ... }
+  // Ollama response format (native):
+  // { model, created_at, message: { role, content, tool_calls, thinking?, reasoning? }, done, total_duration, ... }
+  // Ollama response format (OpenAI-compatible /v1/chat/completions):
+  // { choices: [{ message: { role, content, tool_calls } }], usage: {...} }
 
-  const message = ollamaResponse?.message ?? {};
-  const rawContent = message.content || "";
+  // Handle both native Ollama format and OpenAI-compatible format
+  const message = ollamaResponse?.message ?? ollamaResponse?.choices?.[0]?.message ?? {};
   const toolCalls = message.tool_calls || [];
 
-  // Debug: Log raw Ollama response
-  logger.info({
+  // Extract content and thinking/reasoning separately
+  // Some models (GLM) put thinking in a separate field, others embed it in content
+  const rawContent = message.content || "";
+  const rawThinking = message.thinking || message.reasoning || "";
+
+  // Log raw Ollama response (debug level for verbose details)
+  logger.debug({
     hasMessage: !!ollamaResponse?.message,
-    rawContentLength: rawContent.length,
-    rawContentPreview: rawContent.substring(0, 200),
+    messageKeys: ollamaResponse?.message ? Object.keys(ollamaResponse.message) : [],
+    hasContent: !!rawContent,
+    contentLength: rawContent.length,
+    hasThinking: !!rawThinking,
+    thinkingLength: rawThinking.length,
     toolCallCount: toolCalls.length,
     done: ollamaResponse?.done,
     model: ollamaResponse?.model
-  }, '=== OLLAMA RAW RESPONSE ===');
+  }, 'Ollama raw response');
 
   // Build content blocks
   const contentItems = [];
 
-  // Add text content if present, after stripping thinking blocks
+  // Add thinking block FIRST if present (like Claude's extended thinking)
+  // This allows downstream consumers to optionally display/hide thinking
+  if (typeof rawThinking === "string" && rawThinking.trim()) {
+    contentItems.push({
+      type: "thinking",
+      thinking: rawThinking.trim()
+    });
+    logger.debug({
+      thinkingLength: rawThinking.length
+    }, 'ollamaToAnthropicResponse: Added thinking block');
+  }
+
+  // Add main text content, stripping any embedded thinking blocks
   if (typeof rawContent === "string" && rawContent.trim()) {
     const cleanedContent = stripThinkingBlocks(rawContent);
-    logger.debug({
-      rawLength: rawContent.length,
-      cleanedLength: cleanedContent?.length || 0,
-      cleanedPreview: cleanedContent?.substring(0, 100)
-    }, 'ollamaToAnthropicResponse: After stripThinkingBlocks');
-
     if (cleanedContent) {
       contentItems.push({ type: "text", text: cleanedContent });
     }
   }
 
+  // If no content but we have thinking, use thinking as fallback content
+  // (some models put everything in thinking when system prompt is present)
+  const hasTextContent = contentItems.some(c => c.type === 'text' && c.text?.length > 0);
+  if (!hasTextContent && rawThinking) {
+    // Extract a summary or the final answer from thinking if possible
+    // For now, just indicate that response is in thinking
+    contentItems.push({
+      type: "text",
+      text: "[Response available in thinking block]"
+    });
+    logger.debug({}, 'ollamaToAnthropicResponse: No main content, added placeholder (thinking available)');
+  }
+
   // Add tool calls if present
   if (Array.isArray(toolCalls) && toolCalls.length > 0) {
     const { buildAnthropicResponseFromOllama } = require("../clients/ollama-utils");
-    // Use the utility function for tool call conversion
+    // Use the utility function for tool call conversion, but preserve thinking
     logger.debug({ toolCallCount: toolCalls.length }, 'ollamaToAnthropicResponse: Has tool calls, using buildAnthropicResponseFromOllama');
-    return buildAnthropicResponseFromOllama(ollamaResponse, requestedModel);
+    const toolResponse = buildAnthropicResponseFromOllama(ollamaResponse, requestedModel);
+    // Prepend thinking block if we captured one
+    if (contentItems.length > 0 && contentItems[0].type === 'thinking') {
+      toolResponse.content = [contentItems[0], ...toolResponse.content];
+    }
+    return toolResponse;
   }
 
   if (contentItems.length === 0) {
     logger.warn({
       rawContentLength: rawContent.length,
-      rawContentPreview: rawContent.substring(0, 200)
+      rawThinkingLength: rawThinking.length
     }, 'ollamaToAnthropicResponse: No content items, adding empty text block');
     contentItems.push({ type: "text", text: "" });
   }
 
-  // Ollama uses different token count fields
-  const inputTokens = ollamaResponse.prompt_eval_count ?? 0;
-  const outputTokens = ollamaResponse.eval_count ?? 0;
+  // Ollama uses different token count fields (handle both native and OpenAI-compatible)
+  const inputTokens = ollamaResponse.prompt_eval_count ?? ollamaResponse.usage?.prompt_tokens ?? 0;
+  const outputTokens = ollamaResponse.eval_count ?? ollamaResponse.usage?.completion_tokens ?? 0;
 
   const result = {
     id: `msg_${Date.now()}`,
@@ -758,12 +791,13 @@ function ollamaToAnthropicResponse(ollamaResponse, requestedModel) {
     },
   };
 
-  logger.info({
+  logger.debug({
     contentBlockCount: contentItems.length,
     contentTypes: contentItems.map(c => c.type),
-    stopReason: result.stop_reason,
-    hasContent: contentItems.some(c => c.type === 'text' && c.text?.length > 0)
-  }, '=== OLLAMA TO ANTHROPIC CONVERSION COMPLETE ===');
+    hasThinking: contentItems.some(c => c.type === 'thinking'),
+    hasText: contentItems.some(c => c.type === 'text'),
+    stopReason: result.stop_reason
+  }, 'Ollama to Anthropic conversion complete');
 
   return result;
 }
@@ -2527,6 +2561,15 @@ async function runAgentLoop({
     // Use actualProvider from invokeModel for hybrid routing support
     const actualProvider = databricksResponse.actualProvider || providerType;
 
+    // Provider routing debug
+    logger.debug({
+      actualProvider,
+      providerType,
+      hasJson: !!databricksResponse?.json,
+      ok: databricksResponse?.ok,
+      status: databricksResponse?.status
+    }, "Provider routing");
+
     if (actualProvider === "bedrock") {
       // Bedrock with Claude models returns native Anthropic format
       // Other models are already converted by bedrock-utils
@@ -2540,10 +2583,37 @@ async function runAgentLoop({
         anthropicPayload.content = policy.sanitiseContent(anthropicPayload.content);
       }
     } else if (actualProvider === "ollama") {
-      anthropicPayload = ollamaToAnthropicResponse(
-        databricksResponse.json,
-        requestedModel,
-      );
+      // Handle Ollama error responses or null JSON
+      if (!databricksResponse.json || databricksResponse.json.error) {
+        logger.error({
+          json: databricksResponse.json,
+          status: databricksResponse.status,
+          ok: databricksResponse.ok
+        }, "Ollama returned error or null response");
+        anthropicPayload = {
+          id: `msg_${Date.now()}`,
+          type: "message",
+          role: "assistant",
+          model: requestedModel,
+          content: [{ type: "text", text: databricksResponse.json?.error || "Ollama request failed" }],
+          stop_reason: "error",
+          stop_sequence: null,
+          usage: { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 }
+        };
+      } else {
+        anthropicPayload = ollamaToAnthropicResponse(
+          databricksResponse.json,
+          requestedModel,
+        );
+      }
+
+      // Ollama payload validation
+      logger.debug({
+        hasContent: !!anthropicPayload?.content,
+        contentIsArray: Array.isArray(anthropicPayload?.content),
+        contentLength: anthropicPayload?.content?.length
+      }, "Ollama Anthropic payload");
+
       anthropicPayload.content = policy.sanitiseContent(anthropicPayload.content);
     } else if (actualProvider === "openrouter") {
       const { convertOpenRouterResponseToAnthropic } = require("../clients/openrouter-utils");

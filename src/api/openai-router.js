@@ -88,6 +88,15 @@ router.post("/chat/completions", async (req, res) => {
           throw new Error("Invalid response from orchestrator");
         }
 
+        // Handle error responses from orchestrator
+        if (result.body?.error) {
+          logger.warn({
+            error: result.body.error,
+            terminationReason: result.terminationReason
+          }, "Orchestrator returned error response (streaming)");
+          throw new Error(result.body.error);
+        }
+
         // Convert to OpenAI format
         const openaiResponse = convertAnthropicToOpenAI(result.body, req.body.model);
 
@@ -190,6 +199,29 @@ router.post("/chat/completions", async (req, res) => {
         bodyType: typeof result?.body,
         bodyKeys: result?.body ? Object.keys(result.body) : null
       }, "Orchestrator result structure");
+
+      // Pre-conversion validation
+      logger.debug({
+        hasBody: !!result?.body,
+        hasContent: !!result?.body?.content,
+        contentIsArray: Array.isArray(result?.body?.content),
+        hasError: !!result?.body?.error
+      }, "Pre-conversion check");
+
+      // Handle error responses from orchestrator
+      if (result?.body?.error) {
+        logger.warn({
+          error: result.body.error,
+          terminationReason: result.terminationReason
+        }, "Orchestrator returned error response");
+        return res.status(500).json({
+          error: {
+            message: result.body.error,
+            type: "server_error",
+            code: "internal_error"
+          }
+        });
+      }
 
       // Convert Anthropic response to OpenAI format
       const openaiResponse = convertAnthropicToOpenAI(result.body, req.body.model);

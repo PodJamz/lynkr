@@ -122,11 +122,21 @@ function convertAnthropicToolsToOllama(anthropicTools) {
  * }
  */
 function convertOllamaToolCallsToAnthropic(ollamaResponse) {
-  const message = ollamaResponse?.message || {};
+  // Handle both native Ollama format (message) and OpenAI-compatible format (choices[0].message)
+  const message = ollamaResponse?.message || ollamaResponse?.choices?.[0]?.message || {};
   const toolCalls = message.tool_calls || [];
   const textContent = message.content || "";
+  const thinkingContent = message.thinking || message.reasoning || ""; // GLM/DeepSeek models use these fields
 
   const contentBlocks = [];
+
+  // Add thinking block first if present (like Claude's extended thinking)
+  if (thinkingContent && thinkingContent.trim()) {
+    contentBlocks.push({
+      type: "thinking",
+      thinking: thinkingContent.trim(),
+    });
+  }
 
   // Add text content if present
   if (textContent && textContent.trim()) {
@@ -190,9 +200,9 @@ function buildAnthropicResponseFromOllama(ollamaResponse, requestedModel) {
     ? contentBlocks
     : [{ type: "text", text: "" }];
 
-  // Extract token counts
-  const inputTokens = ollamaResponse.prompt_eval_count || 0;
-  const outputTokens = ollamaResponse.eval_count || 0;
+  // Extract token counts (handle both native Ollama and OpenAI-compatible formats)
+  const inputTokens = ollamaResponse.prompt_eval_count || ollamaResponse.usage?.prompt_tokens || 0;
+  const outputTokens = ollamaResponse.eval_count || ollamaResponse.usage?.completion_tokens || 0;
 
   return {
     id: `msg_${Date.now()}`,

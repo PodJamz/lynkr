@@ -308,8 +308,11 @@ async function invokeOllama(body) {
     }, 'Ollama: Removed consecutive duplicate roles from message sequence');
   }
 
+  // Use requested model if provided, otherwise fall back to configured default
+  const requestedModel = body.model || config.ollama.model;
+
   const ollamaBody = {
-    model: config.ollama.model,
+    model: requestedModel,
     messages: deduplicated,
     stream: false,  // Force non-streaming for Ollama - streaming format conversion not yet implemented
     options: {
@@ -320,7 +323,7 @@ async function invokeOllama(body) {
   };
 
   // Check if model supports tools FIRST (before wasteful injection)
-  const supportsTools = await checkOllamaToolSupport(config.ollama.model);
+  const supportsTools = await checkOllamaToolSupport(requestedModel);
 
   // Inject standard tools if client didn't send any (passthrough mode)
   let toolsToSend = body.tools;
@@ -358,13 +361,12 @@ async function invokeOllama(body) {
     logMessage = `No tools (0 tools)`;
   }
 
-  logger.info({
-    model: config.ollama.model,
+  logger.debug({
+    model: requestedModel,
     toolCount,
     toolsInjected,
-    supportsTools,
-    toolNames: (Array.isArray(toolsToSend) && toolsToSend.length > 0) ? toolsToSend.map(t => t.name) : []
-  }, `=== Ollama STANDARD TOOLS INJECTION for ${config.ollama.model} === ${logMessage}`);
+    supportsTools
+  }, `Ollama request: ${logMessage}`);
 
   return performJsonRequest(endpoint, { headers, body: ollamaBody }, "Ollama");
 }

@@ -198,20 +198,46 @@ function convertAnthropicToOpenAI(anthropicResponse, model = "claude-3-5-sonnet-
     throw new Error("convertAnthropicToOpenAI: anthropicResponse is undefined or null");
   }
 
+  // Already OpenAI format? Pass through. (Ollama returns OpenAI format directly)
+  if (anthropicResponse.choices && Array.isArray(anthropicResponse.choices)) {
+    // Validate it's actually well-formed OpenAI format
+    if (anthropicResponse.choices[0]?.message?.content !== undefined) {
+      return anthropicResponse;
+    }
+    // Has choices but malformed - log warning and continue to conversion attempt
+    logger.warn({
+      keys: Object.keys(anthropicResponse),
+      choicesLength: anthropicResponse.choices.length,
+      firstChoice: anthropicResponse.choices[0]
+    }, "convertAnthropicToOpenAI: Response has choices but malformed structure, attempting conversion");
+  }
+
   const { id, content, stop_reason, usage } = anthropicResponse;
 
-  // Validate required fields
+  // Validate required fields with detailed error info
   if (!content || !Array.isArray(content)) {
+    logger.error({
+      keys: Object.keys(anthropicResponse),
+      contentType: typeof content,
+      contentValue: content,
+      hasChoices: !!anthropicResponse.choices,
+      hasMessage: !!anthropicResponse.message,
+      responsePreview: JSON.stringify(anthropicResponse).substring(0, 500)
+    }, "convertAnthropicToOpenAI: invalid content field");
     throw new Error(`convertAnthropicToOpenAI: invalid content field (got ${typeof content})`);
   }
 
   // Convert content blocks to OpenAI format
   let messageContent = "";
+  let thinkingContent = "";
   const toolCalls = [];
 
   for (const block of content) {
     if (block.type === "text") {
       messageContent += block.text;
+    } else if (block.type === "thinking") {
+      // Capture thinking/reasoning from models like GLM, DeepSeek, etc.
+      thinkingContent += block.thinking || "";
     } else if (block.type === "tool_use") {
       toolCalls.push({
         id: block.id,
@@ -246,6 +272,17 @@ function convertAnthropicToOpenAI(anthropicResponse, model = "claude-3-5-sonnet-
       total_tokens: (usage?.input_tokens || 0) + (usage?.output_tokens || 0)
     }
   };
+
+  // Add thinking/reasoning if present (custom extension for admin/debug)
+  // This preserves chain-of-thought from models like GLM, DeepSeek, o1, etc.
+  if (thinkingContent) {
+    openaiResponse.choices[0].message._thinking = thinkingContent;
+    // Also add to response root for easy access
+    openaiResponse._thinking = {
+      content: thinkingContent,
+      tokens: thinkingContent.split(/\s+/).length // rough token estimate
+    };
+  }
 
   // Add tool_calls if present
   if (toolCalls.length > 0) {
